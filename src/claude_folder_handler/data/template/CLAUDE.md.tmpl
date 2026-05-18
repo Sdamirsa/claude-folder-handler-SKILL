@@ -1,0 +1,20 @@
+# {{project_name}}
+
+## Stack
+- Language: {{language}}
+- Build: `{{build}}`
+- Test: `{{test}}`
+- Lint: `{{lint}}`
+
+## Conventions (load-bearing rules)
+- Prefer editing existing files to creating new ones.
+- Run the test+lint gate before committing.
+- Don't put secrets in code; use `.env` (already gitignored).
+
+## Where things live
+- `.claude/ROUTER.md` — task-routing decision table (read this first).
+- `.claude/rules/` — path-scoped instructions.
+- `.claude/skills/` — auto-triggered workflows.
+- `.claude/agents/` — delegatable subagents (when installed via packs).
+- `.claude/reference/INDEX.md` — reference catalog (consult on demand).
+- `.claude/README.md` — full navigation map.
