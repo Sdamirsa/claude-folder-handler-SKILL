@@ -1,0 +1,12 @@
+[pack]
+name = "llm-app"
+summary = "Anthropic SDK conventions, model migration, stale-model warnings."
+default = true
+depends_on = []
+
+description = """
+For Claude API / Anthropic SDK projects: scaffold a client with prompt
+caching and proper .env handling, migrate code between model versions,
+enforce SDK conventions via a path-scoped rule, and warn when deprecated
+model IDs slip into the codebase.
+"""

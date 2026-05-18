@@ -1,0 +1,68 @@
+[project]
+name = "claude-folder-handler"
+version = "0.1.0"
+description = "Scaffold, upgrade, and audit .claude/ folders for coding repos. LLM-scientist friendly: data-science, visualization, LLM app, LLM extraction packs."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { file = "LICENSE" }
+authors = [{ name = "Sdamirsa" }]
+keywords = ["claude", "claude-code", "scaffolding", "mcp", "data-science", "llm", "visualization", "extraction"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Code Generators",
+]
+dependencies = [
+    "mcp>=1.0,<2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+claude-folder-handler = "claude_folder_handler.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/Sdamirsa/claude-folder-handler-SKILL"
+Issues = "https://github.com/Sdamirsa/claude-folder-handler-SKILL/issues"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build]
+# Don't rely on VCS-tracked files for data inclusion — packs/templates need to
+# ship even when freshly added pre-commit.
+include = [
+  "src/claude_folder_handler/**/*",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/claude_folder_handler"]
+artifacts = [
+  "src/claude_folder_handler/data/**/*",
+]
+
+[tool.hatch.build.targets.sdist]
+include = [
+  "src/claude_folder_handler/**/*",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra -q"
+asyncio_mode = "auto"

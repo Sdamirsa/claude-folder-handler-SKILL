@@ -1,0 +1,11 @@
+[pack]
+name = "pr-flow"
+summary = "Open PRs, clean rebases, and critical reviews."
+default = false
+depends_on = []
+
+description = """
+Pull-request workflow: an open-pr skill that crafts a summary + test plan and
+pushes, a rebase-clean skill for tidying history before merge, and a reviewer
+agent that critiques pending changes in a fresh context window.
+"""

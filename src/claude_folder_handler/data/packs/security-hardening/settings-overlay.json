@@ -1,0 +1,34 @@
+{
+  "permissions": {
+    "deny": [
+      "Read(**/*.token)",
+      "Read(**/*.secret)",
+      "Read(**/*.password)",
+      "Read(**/.terraform/**)",
+      "Read(**/.terraformrc)",
+      "Read(**/.pgpass)",
+      "Read(**/google-credentials*.json)",
+      "Read(**/gcloud-credentials*.json)",
+      "Read(**/service-account*.json)",
+      "Bash(eval *)",
+      "Bash(exec *)",
+      "Bash(ssh -o StrictHostKeyChecking=no*)",
+      "Bash(scp *@*)",
+      "Bash(rsync *@*)"
+    ]
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PROJECT_DIR}/.claude/hooks/05-verify-hooks-lock.py",
+            "timeout": 5
+          }
+        ]
+      }
+    ]
+  }
+}

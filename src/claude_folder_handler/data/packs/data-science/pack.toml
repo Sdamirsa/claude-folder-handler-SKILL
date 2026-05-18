@@ -1,0 +1,13 @@
+[pack]
+name = "data-science"
+summary = "Pandas, notebooks, and dataset cards."
+default = true
+depends_on = []
+
+description = """
+For data-science work: an inspect-df skill that profiles a dataframe (dtypes,
+nulls, cardinality, head), a clean-data skill that builds a reviewable
+preprocessing pipeline, a data-explorer agent for one-shot dataset profiling,
+path-scoped rules for pandas and notebooks, and a dataset-card template under
+reference/datasets/.
+"""

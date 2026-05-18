@@ -1,0 +1,12 @@
+[pack]
+name = "llm-extraction"
+summary = "Structured extraction, schemas, evals, batch processing."
+default = true
+depends_on = []
+
+description = """
+For LLM extraction work: skills to design extractors with JSON schemas, build
+eval harnesses, batch-process documents; a schema-designer agent; path-scoped
+rules for extractor code; and reference templates for schemas, prompts, and
+an extraction-quality checklist.
+"""
