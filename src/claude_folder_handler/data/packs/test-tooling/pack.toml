@@ -1,0 +1,11 @@
+[pack]
+name = "test-tooling"
+summary = "Debug failing tests and write new ones."
+default = false
+depends_on = []
+
+description = """
+Provides a debug-failing-test skill that reproduces a failing test, hypothesizes
+the root cause, and proposes a fix; plus a test-writer agent that drafts new
+tests in the project's existing conventions.
+"""

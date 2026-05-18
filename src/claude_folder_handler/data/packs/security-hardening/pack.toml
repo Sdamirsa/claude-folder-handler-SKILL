@@ -1,0 +1,12 @@
+[pack]
+name = "security-hardening"
+summary = "hooks.lock enforcement, WebFetch allowlist, tightened denies."
+default = true
+depends_on = []
+
+description = """
+Hardens the baseline: a SessionStart hook that verifies hooks.lock and
+refuses to chain other hooks on mismatch; a WebFetch domain allowlist;
+tighter deny rules; and a CLAUDE.md size warning. Recommended for any
+shared repo.
+"""

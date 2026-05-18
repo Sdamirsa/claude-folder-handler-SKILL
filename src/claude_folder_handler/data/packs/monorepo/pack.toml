@@ -1,0 +1,11 @@
+[pack]
+name = "monorepo"
+summary = "Per-package CLAUDE.md and path-scoped rules."
+default = false
+depends_on = []
+
+description = """
+For monorepos: generates per-package CLAUDE.md stubs under apps/*/ and
+packages/*/, and a path-scoped per-package rule template. Each package's
+CLAUDE.md is lazy-loaded only when Claude reads files in that package.
+"""

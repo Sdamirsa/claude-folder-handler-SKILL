@@ -38,15 +38,28 @@ Issues = "https://github.com/Sdamirsa/claude-folder-handler-SKILL/issues"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build]
+# Don't rely on VCS-tracked files for data inclusion — packs/templates need to
+# ship even when freshly added pre-commit.
+include = [
+  "src/claude_folder_handler/**/*",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
+]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/claude_folder_handler"]
+artifacts = [
+  "src/claude_folder_handler/data/**/*",
+]
 
 [tool.hatch.build.targets.sdist]
 include = [
-    "src/claude_folder_handler",
-    "README.md",
-    "LICENSE",
-    "pyproject.toml",
+  "src/claude_folder_handler/**/*",
+  "README.md",
+  "LICENSE",
+  "pyproject.toml",
 ]
 
 [tool.pytest.ini_options]

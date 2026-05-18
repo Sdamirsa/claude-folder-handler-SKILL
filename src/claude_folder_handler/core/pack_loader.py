@@ -198,13 +198,19 @@ def install_pack(cwd: Path, name: str, dry_run: bool = False) -> dict:
             shutil.copy2(src, dest)
             files_written.append(str(dest.relative_to(cwd)))
 
-        # ROUTER managed block
+        # ROUTER managed blocks: pack-<name>, pack-<name>-agents, pack-<name>-reference.
         router_path = claude_dir / "ROUTER.md"
-        rows_path = pack_dir / "router-rows.md"
-        if router_path.exists() and rows_path.exists():
-            body = rows_path.read_text(encoding="utf-8")
+        if router_path.exists():
             text = router_path.read_text(encoding="utf-8")
-            text = replace_block(text, f"pack-{name}", body, MARKDOWN)
+            for filename, suffix in (
+                ("router-rows.md", ""),
+                ("router-rows-agents.md", "-agents"),
+                ("router-rows-reference.md", "-reference"),
+            ):
+                rows_path = pack_dir / filename
+                if rows_path.exists():
+                    body = rows_path.read_text(encoding="utf-8")
+                    text = replace_block(text, f"pack-{name}{suffix}", body, MARKDOWN)
             router_path.write_text(text, encoding="utf-8")
 
         # settings overlay

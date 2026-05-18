@@ -1,0 +1,12 @@
+[pack]
+name = "visualization"
+summary = "Quick charts and chart critique."
+default = true
+depends_on = []
+
+description = """
+For visualization work: a quick-chart skill that produces an appropriate
+matplotlib/plotly/altair chart from a dataframe + the user's question,
+a chart-review skill that critiques an existing chart for clarity/encoding/
+accessibility, and path-scoped plotting style conventions.
+"""
