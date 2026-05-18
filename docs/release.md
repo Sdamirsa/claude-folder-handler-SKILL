@@ -109,16 +109,18 @@ catalog, audit categorization, bypass-resistant Bash parsing, hook-script
 integration via subprocess invocation, and every pack's installation +
 description-lint cleanliness.
 
-**Known limitations / out of scope for v0.1:**
+**Known limitations / out of scope for v0.1.** See [`docs/roadmap.md`](roadmap.md)
+for the full list of planned features grouped by intention (distribution &
+UX, pack ecosystem, observability, safety & integrity, scale & polish).
+Short list of deferred work:
 
-- Plugin marketplace packaging (deferred)
-- Windows-native paths beyond what `uv` + `git` give us free
-- Telemetry dashboard / web UI (data is local JSONL only)
-- Auto-update notification (user re-runs `uvx --refresh`)
-- Skill marketplace / external pack discovery
-- Multi-user workspace settings
-- First-class `uninstall-pack` command
+- `uninstall-pack` command
+- External (git-resolved) packs and pack scaffold/validate helpers
+- Self-update notification at SessionStart
+- Telemetry dashboard subcommand
+- Pack signing for supply-chain safety
+- Windows-native path-handling audit
 - Internationalization
 
-See `design/v4-mcp-distribution.md` for the full design history (v0 → v4) and
+See `design/v4-mcp-distribution.md` for the design history (v0 → v4) and
 `docs/security-model.md` for the security model.

@@ -100,6 +100,7 @@ See [`docs/`](docs/):
 - [`triggering-convention.md`](docs/triggering-convention.md) — how descriptions get written
 - [`security-model.md`](docs/security-model.md) — what the deny hooks block + why
 - [`upgrade-flow.md`](docs/upgrade-flow.md) — managed blocks & three-way merge
+- [`roadmap.md`](docs/roadmap.md) — planned features grouped by intention
 
 ## Status
 
