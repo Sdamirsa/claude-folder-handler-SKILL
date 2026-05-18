@@ -12,9 +12,12 @@ LLM extraction packs ship in the default install.
 
 Prerequisite: [`uv`](https://docs.astral.sh/uv/getting-started/installation/). One-liner: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
-Pick the path that matches what you're trying to do:
+Pick the path that matches what you're trying to do (expand the one you want):
 
-### A. Have Claude do it for you (one line to copy and send to Claude)
+<details>
+<summary><b>A. Have Claude do it for you</b> — one line you copy and send to Claude</summary>
+
+<br>
 
 Paste this into Claude Code and hit enter:
 
@@ -24,7 +27,12 @@ Claude will run the `claude mcp add` command, which edits `~/.claude/settings.js
 
 > **After v0.1.0 lands on PyPI**, the inner command shortens to `uvx claude-folder-handler@latest` — same effect.
 
-### B. Persistent install in Claude Code (Recommended)
+</details>
+
+<details open>
+<summary><b>B. Persistent install in Claude Code</b> — recommended for daily use</summary>
+
+<br>
 
 Add this block to `~/.claude/settings.json` (create the file if absent):
 
@@ -60,18 +68,28 @@ Restart Claude Code. Open any repo, say *"set up .claude here"*. The `setup_clau
 
 Pin a version: `"args": ["claude-folder-handler@0.1.0"]` (or replace `git+...` with `git+...@v0.1.0`).
 
-### C. One-shot try (no install)
+</details>
 
-Run the CLI directly against a repo — no MCP wiring, no persistent state:
+<details>
+<summary><b>C. One-shot try</b> — no install, no MCP wiring</summary>
+
+<br>
+
+Run the CLI directly against a repo:
 
 ```bash
 cd <your-repo>
 uvx --from git+https://github.com/Sdamirsa/claude-folder-handler-SKILL claude-folder-handler setup
 ```
 
-(Post-PyPI: `uvx claude-folder-handler setup`.) Same scaffold, no Claude Code integration. Good for "let me see what this does" or for CI.
+(Post-PyPI: `uvx claude-folder-handler setup`.) Same scaffold result, no Claude Code integration. Good for "let me see what this does" or for CI.
 
-### D. CLI tool on PATH (power users)
+</details>
+
+<details>
+<summary><b>D. CLI tool on PATH</b> — power users, scripts</summary>
+
+<br>
 
 Install persistently so the `claude-folder-handler` command is on your PATH:
 
@@ -85,7 +103,12 @@ claude-folder-handler audit
 
 (Post-PyPI: `uv tool install claude-folder-handler`.) Upgrade with `uv tool upgrade claude-folder-handler`.
 
-### E. CI / scripted setup
+</details>
+
+<details>
+<summary><b>E. CI / scripted setup</b> — workflow steps</summary>
+
+<br>
 
 Use the CLI in a workflow step — no Claude session required:
 
@@ -98,7 +121,12 @@ Use the CLI in a workflow step — no Claude session required:
       claude-folder-handler audit
 ```
 
-### F. Develop on this repo
+</details>
+
+<details>
+<summary><b>F. Develop on this repo</b> — contributors</summary>
+
+<br>
 
 ```bash
 git clone https://github.com/Sdamirsa/claude-folder-handler-SKILL
@@ -110,7 +138,7 @@ uv build           # produce wheel + sdist under dist/
 
 See [`docs/release.md`](docs/release.md) for cutting a release.
 
----
+</details>
 
 > ⚠ **MCP server doesn't show up after install?** See [`docs/mcp-setup.md`](docs/mcp-setup.md) for troubleshooting (uvx PATH, JSON validity, `uvx --refresh` to bust stale caches).
 
