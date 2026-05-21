@@ -5,10 +5,15 @@
 ### 1. Verify clean
 
 ```sh
-git status                       # working tree clean
-uv run pytest                    # all green
-uv build                         # both sdist and wheel produced under dist/
+git status                                # working tree clean
+uv run pytest                             # all green
+uv build                                  # sdist + wheel under dist/
+uv run python scripts/build_skill_zip.py  # Claude.ai Skill zip under dist/
 ```
+
+After this step `dist/` contains three artifacts: `*.tar.gz` (sdist),
+`*.whl` (wheel), and `claude-folder-handler-skill-<version>.zip` (Claude.ai
+Skill upload).
 
 ### 2. Bump version (if needed)
 
@@ -55,7 +60,29 @@ uvx --refresh claude-folder-handler --version
 
 ### 5. GitHub Release
 
-Create a GitHub release pointing at the tag with the install snippet below.
+Create a GitHub release pointing at the tag with the install snippet below
+**and attach the Skill zip** so Claude.ai users can download it without
+building from source:
+
+```sh
+gh release create v0.1.0 \
+  dist/claude-folder-handler-skill-0.1.0.zip \
+  --title "v0.1.0" \
+  --notes-file - <<'EOF'
+# v0.1.0 — initial release
+
+Install for Claude Code (MCP):
+\`\`\`json
+{"mcpServers":{"claude-folder-handler":{"command":"uvx","args":["claude-folder-handler@0.1.0"]}}}
+\`\`\`
+
+Install for Claude.ai (web/desktop): download `claude-folder-handler-skill-0.1.0.zip`
+and upload via Settings → Skills → Add skill.
+EOF
+```
+
+Or do it through the GitHub UI: Releases → Draft new release → drag the
+`claude-folder-handler-skill-<version>.zip` into the attachments area.
 
 ## Post-release install snippet
 
