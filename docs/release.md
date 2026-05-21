@@ -16,6 +16,17 @@ Under **Deployment protection rules**, enable **Required reviewers** and add
 yourself. This is the manual gate that runs before the GitHub Release is
 created (catches accidental tag pushes).
 
+Under **Deployment branches and tags**, choose **Selected branches and tags**
+and add one rule:
+
+- Ref type: **Tag**
+- Name pattern: `v*`
+
+Do **not** add any branch rules — the release workflow only ever runs against
+tag refs (`on: push: tags: ["v*"]` or `workflow_dispatch` with a tag input).
+This restriction is a second layer of defense beyond the workflow's own
+tag-shape and version-match verification.
+
 ### 2. Confirm the workflows are present
 
 - `.github/workflows/ci.yml` — runs on every PR/push to main: tests on
