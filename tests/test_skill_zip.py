@@ -46,8 +46,13 @@ import pytest
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BUILD_SCRIPT = REPO_ROOT / "scripts" / "build_skill_zip.py"
-SKILL_NAME = "claude-folder-handler"
+# Identifier in the SKILL.md frontmatter + the top-level folder name inside
+# the uploaded zip. Cannot contain "claude" per Claude.ai's validator.
+SKILL_NAME = "your-folder-handler"
+# Download artifact filename (kept tied to the project name, not SKILL_NAME).
+ZIP_FILENAME = "claude-folder-handler-skill"
 SKILL_MD_ALIAS = "_skill_body.md"
+DESCRIPTION_MAX_CHARS = 1024
 
 
 @pytest.fixture(scope="module")
@@ -65,7 +70,7 @@ def built_zip() -> Path:
         timeout=30,
     )
     assert result.returncode == 0, f"build failed: {result.stderr}"
-    zips = list(out_dir.glob("claude-folder-handler-skill-*.zip"))
+    zips = list(out_dir.glob(f"{ZIP_FILENAME}-*.zip"))
     assert len(zips) == 1, f"expected one skill zip, got {zips}"
     return zips[0]
 
@@ -117,8 +122,42 @@ def test_skill_md_has_required_frontmatter(built_zip: Path):
     end = body.find("\n---\n", 4)
     assert end > 0, "SKILL.md frontmatter must be closed with '---'"
     fm = body[4:end]
-    assert "name: claude-folder-handler" in fm
+    assert f"name: {SKILL_NAME}" in fm
     assert "description:" in fm
+
+
+def test_skill_name_does_not_contain_claude(built_zip: Path):
+    """Claude.ai validator rule #3: skill name must not contain the reserved
+    word "claude". This was the v0.1.3 failure; v0.1.4 uses `your-folder-handler`.
+    """
+    with zipfile.ZipFile(built_zip) as z:
+        body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
+    fm = body.split("\n---\n", 2)[0][4:]
+    name_line = next((ln for ln in fm.splitlines() if ln.startswith("name:")), None)
+    assert name_line is not None
+    name_value = name_line.split(":", 1)[1].strip()
+    assert "claude" not in name_value.lower(), (
+        f"skill name {name_value!r} contains reserved word 'claude'"
+    )
+    # And the zip-root folder must match the name.
+    assert name_value == SKILL_NAME
+
+
+def test_skill_md_description_within_char_limit(built_zip: Path):
+    """Claude.ai validator rule #4: description must be ≤ 1024 chars."""
+    with zipfile.ZipFile(built_zip) as z:
+        body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
+    fm = body.split("\n---\n", 2)[0][4:]
+    desc_line = next((ln for ln in fm.splitlines() if ln.startswith("description:")), None)
+    assert desc_line is not None
+    desc_value = desc_line.split(":", 1)[1].strip()
+    assert len(desc_value) <= DESCRIPTION_MAX_CHARS, (
+        f"description is {len(desc_value)} chars, exceeds {DESCRIPTION_MAX_CHARS} limit"
+    )
+    # Sanity: keep it substantive (not accidentally truncated to a stub).
+    assert len(desc_value) >= 400, (
+        f"description suspiciously short ({len(desc_value)} chars) — check for truncation"
+    )
 
 
 def test_skill_md_description_is_single_line(built_zip: Path):

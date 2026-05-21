@@ -10,6 +10,18 @@ called out in the **Changed** or **Removed** sections.
 
 ## [Unreleased]
 
+## [0.1.4] — 2026-05-21
+
+### Fixed
+- **Claude.ai Skill zip rejected with two new errors:** *"Skill name in SKILL.md cannot contain the reserved word 'claude'"* and *"field 'description' in SKILL.md must be at most 1024 characters"*. The validator enforces **four** rules total (the two we already knew about, plus name reserved-word and description length).
+- **Skill `name:` renamed from `claude-folder-handler` to `your-folder-handler`** — only the SKILL.md frontmatter inside the uploaded zip + the top-level folder name inside the zip. The Python package (`claude_folder_handler`), MCP server name (`claude-folder-handler`), GitHub repo, and download artifact filename (`claude-folder-handler-skill-<v>.zip`) all stay unchanged.
+- **SKILL.md `description:` trimmed** from ~1140 chars to ~970 chars while preserving the LLM-scientist trigger phrases ("set up .claude for my project", "scaffold claude code config", etc.) and the NOT-for clauses.
+- **`build_skill_zip.py` post-build assertions extended** to all four upload rules: SKILL.md count == 1, nested .zip count == 0, name does not contain "claude", description ≤ 1024 chars. Any violation aborts the build.
+- **Audited the 13 bundled SKILL.md files** (baseline `commit` + every pack-skill) against the same rules — all clean (descriptions 709–879 chars, no names contain "claude"). These ship to the end user's `.claude/skills/` directory and are loaded by Claude Code, not Claude.ai, but the same conventions apply.
+
+### Documentation
+- README Option 1 (Claude.ai web/desktop) updated to mention the `your-folder-handler` name users will see in their Skills list, with a one-liner explaining why the in-Claude.ai name differs from the project name.
+
 ## [0.1.3] — 2026-05-21
 
 ### Fixed
@@ -65,7 +77,8 @@ called out in the **Changed** or **Removed** sections.
 - `docs/` covers architecture, MCP setup, packs, triggering convention, security model, upgrade flow, dogfood run, release, and the roadmap grouped by intention.
 - `design/` preserves the full v0 → v4 design history with critiques and interviews.
 
-[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.3...HEAD
+[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.4...HEAD
+[0.1.4]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.3...v0.1.4
 [0.1.3]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.2...v0.1.3
 [0.1.2]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.0...v0.1.1

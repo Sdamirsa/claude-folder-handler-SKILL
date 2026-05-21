@@ -35,7 +35,7 @@ Go to the [latest release](https://github.com/Sdamirsa/claude-folder-handler-SKI
 1. Open [claude.ai](https://claude.ai) in a browser, or launch the desktop app
 2. Go to **Settings → Capabilities → Skills** *(if you don't see "Skills" right away, check Anthropic's [custom-skills guide](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills) — the location can move)*
 3. Click **Add skill** (or **Upload skill**) and pick the zip you downloaded
-4. You should see `claude-folder-handler` appear in your Skills list
+4. You should see `your-folder-handler` appear in your Skills list (the Claude.ai-uploaded skill is named `your-folder-handler` because Claude.ai reserves the word "claude" in skill names; the Python package and MCP server keep the `claude-folder-handler` name)
 
 **Step 3 — Use it in a chat**
 

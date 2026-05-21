@@ -1,16 +1,20 @@
 """Build a Claude.ai-uploadable Skill zip from this package.
 
 Output: dist/claude-folder-handler-skill-<version>.zip
+(download-artifact filename — the inner skill folder is `your-folder-handler/`
+because Claude.ai's name validator reserves the word "claude".)
 
-Claude.ai's uploader enforces TWO constraints on skill zips:
+Claude.ai's uploader enforces FOUR constraints on skill zips:
 
   1. Exactly ONE `SKILL.md` (the skill body it loads).
   2. NO nested zip files inside the archive.
+  3. The frontmatter `name:` MUST NOT contain the reserved word "claude".
+  4. The frontmatter `description:` MUST be ≤ 1024 characters.
 
 The bundled `data/` tree contains 13 nested `SKILL.md` files — the baseline
 `commit` skill plus every pack-skill body — meant for the END USER's
 `.claude/skills/` directory after they run the scaffold, NOT for Claude.ai's
-loader. To satisfy both validator rules at once, we:
+loader. To satisfy rules #1 and #2 simultaneously we:
 
   - Ship `data/` as LOOSE files (no nested zip)
   - RENAME every `data/.../SKILL.md` to `data/.../_skill_body.md` at build
@@ -21,7 +25,7 @@ loader. To satisfy both validator rules at once, we:
 
 Layout (matches https://github.com/anthropics/skills/tree/main/skills/algorithmic-art):
 
-    claude-folder-handler/
+    your-folder-handler/
     ├── SKILL.md                          # the only SKILL.md in the outer zip
     └── scripts/
         ├── scaffold.py                   # CLI entry — renames + imports
@@ -46,12 +50,25 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_PKG = ROOT / "src" / "claude_folder_handler"
 DIST = ROOT / "dist"
 
-SKILL_NAME = "claude-folder-handler"
+# Identifier the SKILL.md frontmatter declares + the top-level folder name
+# inside the uploaded zip. Cannot contain the reserved word "claude" per
+# Claude.ai's skill name validator. The project-level name (Python package,
+# GitHub repo, MCP server) is still `claude-folder-handler` — this string
+# only governs the Claude.ai-uploaded skill's identity.
+SKILL_NAME = "your-folder-handler"
+
+# Download artifact filename. Kept tied to the project name (not SKILL_NAME)
+# so the GitHub Release glob `dist/claude-folder-handler-skill-*.zip` and the
+# README's release-artifact references stay stable across the rename.
+ZIP_FILENAME = "claude-folder-handler-skill"
 
 # Filename alias used to hide bundled SKILL.md files from Claude.ai's
 # "exactly one SKILL.md" validator. The runtime scaffold.py renames these
 # back to SKILL.md before importing the package.
 SKILL_MD_ALIAS = "_skill_body.md"
+
+# Hard limit Claude.ai enforces on the SKILL.md frontmatter `description:`.
+DESCRIPTION_MAX_CHARS = 1024
 
 
 def _read_version() -> str:
@@ -63,11 +80,11 @@ def _read_version() -> str:
 
 
 SKILL_MD = """---
-name: claude-folder-handler
-description: Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules, on-demand reference catalog) and returns it as a downloadable zip the user extracts at their repo root. Detects the user's stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist-friendly pack defaults (+data-science, +visualization, +llm-app, +llm-extraction, +security-hardening). Use this skill whenever the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", "bootstrap claude for a new project", or asks how to organize a Claude Code configuration — even if they don't use the exact word "scaffold". NOT for editing an EXISTING `.claude/` folder; for that the user should install the `claude-folder-handler` MCP server inside Claude Code. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
+name: your-folder-handler
+description: Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules) and returns it as a downloadable zip the user extracts at their repo root. Detects the stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist defaults (data-science, visualization, llm-app, llm-extraction, security-hardening). Use whenever the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", or asks how to organize a Claude Code configuration — even without the word "scaffold". NOT for editing an EXISTING `.claude/` folder; use the `claude-folder-handler` MCP server inside Claude Code for that. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
 ---
 
-# claude-folder-handler
+# your-folder-handler
 
 Produce a fresh, opinionated `.claude/` directory tree for the user's coding
 project, delivered as a downloadable zip they extract at their repo root.
@@ -405,32 +422,69 @@ def _copy_vendored_pkg(dest_pkg_root: Path) -> tuple[int, int]:
     return n_files, n_renamed
 
 
-def _post_build_assertions(out: Path) -> tuple[int, int]:
-    """Verify the produced zip satisfies Claude.ai's two upload rules.
+def _post_build_assertions(out: Path) -> tuple[int, int, int]:
+    """Verify the produced zip satisfies all four Claude.ai upload rules.
 
-    Raises SystemExit if either invariant is violated. Returns
-    (skill_md_count, nested_zip_count) — both must be (1, 0).
+    Raises SystemExit on any violation. Returns
+    (skill_md_count, nested_zip_count, description_chars).
     """
+    import re
+
     with zipfile.ZipFile(out) as z:
         names = z.namelist()
+        body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
+
+    # Rule 1: exactly one SKILL.md
     skill_mds = [n for n in names if n.endswith("/SKILL.md") or n == "SKILL.md"]
-    nested_zips = [n for n in names if n.lower().endswith(".zip")]
     if len(skill_mds) != 1:
         raise SystemExit(
             f"ERROR: outer skill zip must contain exactly 1 SKILL.md, "
             f"got {len(skill_mds)}: {skill_mds}"
         )
+
+    # Rule 2: no nested .zip
+    nested_zips = [n for n in names if n.lower().endswith(".zip")]
     if nested_zips:
         raise SystemExit(
             f"ERROR: outer skill zip must not contain nested .zip files, got: {nested_zips}"
         )
-    return len(skill_mds), len(nested_zips)
+
+    # Parse frontmatter for rules 3 + 4.
+    if not body.startswith("---\n"):
+        raise SystemExit("ERROR: SKILL.md must start with YAML frontmatter")
+    end = body.find("\n---\n", 4)
+    if end < 0:
+        raise SystemExit("ERROR: SKILL.md frontmatter must be closed with '---'")
+    fm = body[4:end]
+
+    # Rule 3: name must not contain reserved word "claude"
+    name_m = re.search(r"^name:\s*(\S.*?)\s*$", fm, re.MULTILINE)
+    if not name_m:
+        raise SystemExit("ERROR: SKILL.md frontmatter missing `name:` field")
+    skill_name = name_m.group(1).strip()
+    if "claude" in skill_name.lower():
+        raise SystemExit(
+            f"ERROR: SKILL.md `name:` contains reserved word 'claude': {skill_name!r}"
+        )
+
+    # Rule 4: description ≤ 1024 chars (inline single-line value)
+    desc_m = re.search(r"^description:\s*(.+)$", fm, re.MULTILINE)
+    if not desc_m:
+        raise SystemExit("ERROR: SKILL.md frontmatter missing `description:` field")
+    desc = desc_m.group(1).strip()
+    if len(desc) > DESCRIPTION_MAX_CHARS:
+        raise SystemExit(
+            f"ERROR: SKILL.md description is {len(desc)} chars (> {DESCRIPTION_MAX_CHARS} max). "
+            "Trim trigger phrases or NOT-for clauses."
+        )
+
+    return len(skill_mds), len(nested_zips), len(desc)
 
 
 def main() -> int:
     version = _read_version()
     DIST.mkdir(exist_ok=True)
-    out = DIST / f"claude-folder-handler-skill-{version}.zip"
+    out = DIST / f"{ZIP_FILENAME}-{version}.zip"
     if out.exists():
         out.unlink()
 
@@ -449,17 +503,18 @@ def main() -> int:
                     continue
                 z.write(p, arcname=str(p.relative_to(stage.parent)))
 
-    skill_md_count, nested_zip_count = _post_build_assertions(out)
+    skill_md_count, nested_zip_count, desc_chars = _post_build_assertions(out)
 
     size_kb = out.stat().st_size / 1024
     print(f"✓ Wrote {out}")
-    print(f"  Skill name:            {SKILL_NAME}")
-    print(f"  Version:               {version}")
-    print(f"  Vendored pkg files:    {n_files}")
-    print(f"  SKILL.md renamed:      {n_renamed} (to {SKILL_MD_ALIAS})")
-    print(f"  SKILL.md in outer zip: {skill_md_count} (must be 1)")
-    print(f"  Nested .zip in outer:  {nested_zip_count} (must be 0)")
-    print(f"  Outer zip size:        {size_kb:.1f} KB")
+    print(f"  Skill name (frontmatter): {SKILL_NAME}")
+    print(f"  Version:                  {version}")
+    print(f"  Vendored pkg files:       {n_files}")
+    print(f"  SKILL.md renamed:         {n_renamed} (to {SKILL_MD_ALIAS})")
+    print(f"  SKILL.md in outer zip:    {skill_md_count} (must be 1)")
+    print(f"  Nested .zip in outer:     {nested_zip_count} (must be 0)")
+    print(f"  description chars:        {desc_chars} / {DESCRIPTION_MAX_CHARS}")
+    print(f"  Outer zip size:           {size_kb:.1f} KB")
     return 0
 
 
