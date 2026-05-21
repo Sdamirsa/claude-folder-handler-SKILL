@@ -1,126 +1,151 @@
 # Releasing claude-folder-handler
 
-## Cut a release (manual, until automated in CI)
+Releases are automated via GitHub Actions. Push a tag matching `v*` to `origin`
+and the workflow builds artifacts, generates checksums, and publishes a
+GitHub Release — gated by a single manual approval click.
 
-### 1. Verify clean
+## One-time setup
 
-```sh
-git status                       # working tree clean
-uv run pytest                    # all green
-uv build                         # both sdist and wheel produced under dist/
-```
+Required before the first release. Done once per repo.
 
-### 2. Bump version (if needed)
+### 1. Create the `release` environment with required reviewers
 
-Edit `pyproject.toml`:
+GitHub → repo Settings → **Environments** → **New environment** → name `release`.
 
-```toml
-[project]
-version = "0.1.0"
-```
+Under **Deployment protection rules**, configure as follows:
 
-And `src/claude_folder_handler/__init__.py`:
+| Setting | Value | Rationale |
+|---|---|---|
+| Required reviewers | ✅ Add yourself (Sdamirsa) | The manual gate before publish — catches accidental tag pushes |
+| Prevent self-review | ❌ unchecked | Solo dev — you must be able to approve your own releases |
+| Wait timer | ❌ unchecked | The reviewer click is the gate; no extra delay needed |
+| Allow administrators to bypass configured protection rules | ❌ unchecked | Forces every release through the approval flow — no admin escape hatch, clean audit trail |
 
-```python
-__version__ = "0.1.0"
-```
+Note: the "Allow administrators to bypass" checkbox is a "permit" toggle —
+**unchecked means bypass is blocked** (which is what we want).
 
-(Keep them in sync. A test enforces that `--version` matches `__version__`.)
+Under **Deployment branches and tags**, choose **Selected branches and tags**
+and add one rule:
 
-### 3. Tag
+- Ref type: **Tag**
+- Name pattern: `v*`
 
-```sh
-git tag -a v0.1.0 -m "v0.1.0 — initial release"
-git push origin v0.1.0
-```
+Do **not** add any branch rules — the release workflow only ever runs against
+tag refs (`on: push: tags: ["v*"]` or `workflow_dispatch` with a tag input).
+This restriction is a second layer of defense beyond the workflow's own
+tag-shape and version-match verification.
 
-### 4. Publish to PyPI
+### 2. Confirm the workflows are present
 
-Prerequisites: a PyPI account, `~/.pypirc` configured (or env `PYPI_TOKEN`),
-the `twine` CLI installed.
+- `.github/workflows/ci.yml` — runs on every PR/push to main: tests on
+  Python 3.11/3.12 + builds wheel/sdist/skill zip
+- `.github/workflows/release.yml` — runs on `v*` tag push: tests → verify
+  version → build → manual approval → create GH Release
 
-```sh
-rm -rf dist && uv build
-uv pip install twine
-twine check dist/*
-twine upload dist/*
-```
-
-Verify:
+## Cutting a release (the happy path)
 
 ```sh
-pip install claude-folder-handler==0.1.0
-uvx --refresh claude-folder-handler --version
+# 1. Make sure CHANGELOG.md [Unreleased] has notes under it
+$EDITOR CHANGELOG.md
+
+# 2. Bump version (writes pyproject + __init__ + CHANGELOG, commits, tags)
+uv run python scripts/bump.py 0.2.0
+#   or:
+uv run python scripts/bump.py patch       # 0.1.0 → 0.1.1
+uv run python scripts/bump.py minor       # 0.1.0 → 0.2.0
+uv run python scripts/bump.py major       # 0.1.0 → 1.0.0
+
+# 3. Push (the only network step)
+git push origin main --tags
+
+# 4. Watch the workflow at:
+#    https://github.com/Sdamirsa/claude-folder-handler-SKILL/actions
+#
+# 5. Approve the release deployment when prompted
+#    (Actions → release run → Review deployments → Approve)
+#
+# 6. Done. The GitHub Release appears with wheel, sdist, skill zip, and
+#    SHA256SUMS attached. Notes populated from CHANGELOG's [<version>] section.
 ```
 
-### 5. GitHub Release
+The bump script refuses if:
+- working tree is dirty (override: `--allow-dirty`)
+- not on `main` (override: `--allow-branch <name>`)
+- CHANGELOG `[Unreleased]` section is empty (no override — add notes)
+- target version equals current
 
-Create a GitHub release pointing at the tag with the install snippet below.
+## Prereleases
 
-## Post-release install snippet
+Tags with a `-` (e.g. `v0.2.0-rc1`, `v1.0.0-alpha`, `v0.3.0-beta.2`) are
+automatically marked **Prerelease** on the GitHub Release page (so they
+don't appear as "Latest" until you ship the final).
 
-```json
-{
-  "mcpServers": {
-    "claude-folder-handler": {
-      "command": "uvx",
-      "args": ["claude-folder-handler@0.1.0"]
-    }
-  }
-}
+```sh
+uv run python scripts/bump.py 0.2.0-rc1
+git push origin main --tags
 ```
 
-## v0.1.0 release notes
+## Manual / emergency release (skip the bump script)
 
-### Initial release
+If the bump script can't run (e.g., emergency hotfix from a non-main branch):
 
-`claude-folder-handler` is an MCP server + CLI that scaffolds, upgrades, and
-audits `.claude/` configurations for any coding repo. Distributed via PyPI,
-runnable with `uvx`.
+```sh
+# Edit pyproject.toml + src/claude_folder_handler/__init__.py + CHANGELOG.md by hand
+git add pyproject.toml src/claude_folder_handler/__init__.py CHANGELOG.md
+git commit -m "chore: release v0.1.1"
+git tag -a v0.1.1 -m "v0.1.1"
+git push origin <your-branch> --tags
+```
 
-**MCP tools:** `setup_claude_folder`, `install_pack`, `upgrade_claude_folder`,
-`audit_claude_folder`, `approve_hooks`, `list_packs`.
+The workflow's `build` job verifies the tag matches the pyproject +
+`__init__.py` version and fails fast on mismatch.
 
-**CLI subcommands:** `setup`, `install-pack`, `upgrade`, `audit`,
-`approve-hooks`, `list-packs`, `print-mcp-config`, `mcp`.
+## Workflow dispatch (re-run a release for an existing tag)
 
-**Bundled packs:** `+pr-flow`, `+test-tooling`, `+data-science` ★,
-`+visualization` ★, `+llm-app` ★, `+llm-extraction` ★, `+monorepo`,
-`+security-hardening` ★ (★ = default-checked at `/setup`).
+If a release fails (CI hiccup, etc.) and you want to retry without
+re-tagging:
 
-**Baseline scaffolds:** `CLAUDE.md` (≤40 lines, stack-substituted),
-`.mcp.json.example`, `.gitignore` (managed block), and `.claude/` with
-`README`, `ROUTER.md`, `settings.json`, `.meta/`, `rules/00-global`,
-`skills/commit`, 4 Python hooks (session-start, deny-secrets,
-deny-destructive, telemetry) + shared `lib/`, and `reference/` (INDEX +
-README).
+GitHub → Actions → **Release** → **Run workflow** → enter the existing tag
+(e.g. `v0.1.0`). The workflow runs against that tag, regenerates artifacts,
+and prompts for approval again.
 
-**Security:** PreToolUse hooks block `rm -rf` on `/`/`~`/`$HOME`, force-push
-to protected branches, `sudo`, `curl|sh`/`wget|bash`, base64-decode-to-shell,
-SSRF to cloud-metadata endpoints, `find -delete`/`find -exec rm`,
-`shred`/`truncate -s0`, and reads of `.env*`, `credentials*`, SSH/AWS/GCP
-credentials. Bash parsing is shlex-based with leading-assignment expansion
-and short-flag bundle normalization to close the bypasses cataloged in the
-security review.
+## What gets attached to each release
 
-**Testing:** 103 tests covering smoke, managed-block round-trips, stack
-detection, hooks.lock drift, description lint, scaffold end-to-end, pack
-catalog, audit categorization, bypass-resistant Bash parsing, hook-script
-integration via subprocess invocation, and every pack's installation +
-description-lint cleanliness.
+| File | Purpose |
+|---|---|
+| `claude_folder_handler-<v>-py3-none-any.whl` | Python wheel (CLI / programmatic use) |
+| `claude_folder_handler-<v>.tar.gz` | Python sdist |
+| `claude-folder-handler-skill-<v>.zip` | Claude.ai Skill upload (web/desktop users) |
+| `SHA256SUMS` | sha256 of all the above; verify with `sha256sum -c SHA256SUMS` |
 
-**Known limitations / out of scope for v0.1.** See [`docs/roadmap.md`](roadmap.md)
-for the full list of planned features grouped by intention (distribution &
-UX, pack ecosystem, observability, safety & integrity, scale & polish).
-Short list of deferred work:
+Plus auto-generated `Source code (zip)` and `Source code (tar.gz)` from GitHub.
 
-- `uninstall-pack` command
-- External (git-resolved) packs and pack scaffold/validate helpers
-- Self-update notification at SessionStart
-- Telemetry dashboard subcommand
-- Pack signing for supply-chain safety
-- Windows-native path-handling audit
-- Internationalization
+## Release notes
 
-See `design/v4-mcp-distribution.md` for the design history (v0 → v4) and
-`docs/security-model.md` for the security model.
+Generated by `scripts/extract_changelog.py`, which pulls the matching
+`## [<version>]` section out of `CHANGELOG.md` and appends install snippets
+pinned to the released tag (Claude Code MCP, CLI, Claude.ai Skill).
+
+To preview locally before tagging:
+
+```sh
+uv run python scripts/extract_changelog.py 0.2.0
+```
+
+## Verifying a download
+
+```sh
+TAG=v0.1.0
+curl -L -O https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases/download/$TAG/claude-folder-handler-skill-${TAG#v}.zip
+curl -L -O https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases/download/$TAG/SHA256SUMS
+sha256sum -c SHA256SUMS --ignore-missing
+```
+
+## Why no PyPI for v0.1?
+
+Distribution is GitHub-Releases-only. The `--from git+...@v<tag>` install
+path is functionally equivalent to `uvx claude-folder-handler@<tag>` for
+end users and sidesteps PyPI account / namespace / trademark overhead.
+
+PyPI publication is on the roadmap (`docs/roadmap.md` → "Distribution & UX")
+when there's clear demand.

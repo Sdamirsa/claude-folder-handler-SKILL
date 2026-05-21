@@ -1,0 +1,151 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to release (e.g. v0.2.0). Must already exist on the repo."
+        required: true
+        type: string
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Install (editable + dev extras)
+        run: uv venv && uv pip install -e ".[dev]"
+
+      - name: Run tests
+        run: uv run pytest -v
+
+  build:
+    name: Build + verify version
+    needs: test
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      is_prerelease: ${{ steps.resolve.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v6
+        with:
+          enable-cache: true
+
+      - name: Resolve tag + verify version
+        id: resolve
+        shell: bash
+        run: |
+          set -euo pipefail
+          REF="${{ github.event.inputs.tag || github.ref_name }}"
+          if [[ ! "$REF" =~ ^v ]]; then
+            echo "::error::Tag $REF must start with v"
+            exit 1
+          fi
+          TAG_VERSION="${REF#v}"
+
+          PKG_VERSION=$(grep -E '^version[[:space:]]*=' pyproject.toml \
+            | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+          INIT_VERSION=$(grep -E '^__version__' src/claude_folder_handler/__init__.py \
+            | head -1 | sed -E 's/.*"([^"]+)".*/\1/')
+
+          echo "tag:        v${TAG_VERSION}"
+          echo "pyproject:  ${PKG_VERSION}"
+          echo "__init__:   ${INIT_VERSION}"
+
+          if [[ "$TAG_VERSION" != "$PKG_VERSION" ]]; then
+            echo "::error::Tag ($TAG_VERSION) ≠ pyproject.toml version ($PKG_VERSION)"
+            exit 1
+          fi
+          if [[ "$TAG_VERSION" != "$INIT_VERSION" ]]; then
+            echo "::error::Tag ($TAG_VERSION) ≠ __init__.py version ($INIT_VERSION)"
+            exit 1
+          fi
+
+          echo "version=$TAG_VERSION" >> "$GITHUB_OUTPUT"
+
+          # Prerelease detection: any version containing '-' (e.g. 0.2.0-rc1).
+          if [[ "$TAG_VERSION" == *-* ]]; then
+            echo "is_prerelease=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "is_prerelease=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Install (for skill zip builder)
+        run: uv venv && uv pip install -e ".[dev]"
+
+      - name: Build wheel + sdist
+        run: uv build
+
+      - name: Build Claude.ai Skill zip
+        run: uv run python scripts/build_skill_zip.py
+
+      - name: Generate SHA256SUMS
+        working-directory: dist
+        run: |
+          sha256sum * | tee SHA256SUMS
+
+      - name: Extract release notes from CHANGELOG
+        run: |
+          uv run python scripts/extract_changelog.py "${{ steps.resolve.outputs.version }}" \
+            > RELEASE_NOTES.md
+          echo "─── RELEASE NOTES PREVIEW ───"
+          cat RELEASE_NOTES.md
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-dist
+          path: |
+            dist/*
+            RELEASE_NOTES.md
+          retention-days: 30
+
+  release:
+    name: Create GitHub Release
+    needs: build
+    runs-on: ubuntu-latest
+    environment: release  # ← Required-reviewers gate enforces manual approval
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-dist
+
+      - name: List artifacts
+        run: ls -lh dist/ RELEASE_NOTES.md
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ needs.build.outputs.version }}
+          name: v${{ needs.build.outputs.version }}
+          body_path: RELEASE_NOTES.md
+          draft: false
+          prerelease: ${{ needs.build.outputs.is_prerelease == 'true' }}
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
+            dist/claude-folder-handler-skill-*.zip
+            dist/SHA256SUMS
+          fail_on_unmatched_files: true

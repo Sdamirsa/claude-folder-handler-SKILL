@@ -132,11 +132,29 @@ Use the CLI in a workflow step — no Claude session required:
 git clone https://github.com/Sdamirsa/claude-folder-handler-SKILL
 cd claude-folder-handler-SKILL
 uv venv && uv pip install -e ".[dev]"
-uv run pytest      # 103 tests
-uv build           # produce wheel + sdist under dist/
+uv run pytest                                  # 103 tests
+uv build                                       # wheel + sdist under dist/
+uv run python scripts/build_skill_zip.py       # Claude.ai Skill zip under dist/
 ```
 
 See [`docs/release.md`](docs/release.md) for cutting a release.
+
+</details>
+
+<details>
+<summary><b>G. Claude.ai web/desktop (no Claude Code)</b> — Skill upload</summary>
+
+<br>
+
+If you're using Claude.ai in a browser or desktop app rather than Claude Code, install the **Skill zip** instead:
+
+1. Download `claude-folder-handler-skill-<version>.zip` from the [Releases page](https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases) (or build it locally — see option F).
+2. In Claude.ai → **Settings → Skills → Add skill**, upload the zip.
+3. In any conversation, say *"set up .claude for my project"*.
+
+The skill runs in Claude.ai's sandbox, asks about your stack and pack preferences (or reads an uploaded `pyproject.toml` / `package.json`), scaffolds a `.claude/` directory tree, and returns a zip you extract at your repo root.
+
+For ongoing audit/upgrade tooling, use the MCP install instead (paths A or B above).
 
 </details>
 
