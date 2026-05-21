@@ -2,24 +2,29 @@
 
 Output: dist/claude-folder-handler-skill-<version>.zip
 
-Contents:
-  SKILL.md                                # frontmatter + workflow instructions
-  README.md                               # for humans who unzip and peek
-  pkg/claude_folder_handler/
-    __init__.py
-    core/*                                # the scaffold + audit + upgrade logic
-    data/template/*                       # baseline template
-    data/packs/*                          # all 8 packs
+Layout inside the zip follows Anthropic's official skill convention
+(SKILL.md + scripts/ + references/ + assets/), with the skill folder as the
+zip root so Claude.ai registers it correctly:
 
-NOT included: cli.py, mcp_server.py, __main__.py (the skill drives via
-direct imports — no MCP, no argparse needed in the Claude.ai sandbox).
-This also lets the skill ship without the `mcp` dependency.
+    claude-folder-handler/
+    ├── SKILL.md                          # frontmatter + lean instructions
+    └── scripts/
+        ├── scaffold.py                   # CLI that does the deterministic work
+        └── claude_folder_handler/        # vendored package source
+            ├── __init__.py
+            ├── core/                     # scaffold + audit + pack loader
+            └── data/{template,packs}/    # baseline tree + 8 packs
+
+The vendored package excludes the MCP server, CLI, and __main__ — the skill
+drives setup_repo() directly via scripts/scaffold.py, so the `mcp` runtime
+dependency is unneeded in the Claude.ai sandbox.
 """
 
 from __future__ import annotations
 
 import shutil
 import sys
+import tempfile
 import zipfile
 from pathlib import Path
 
@@ -27,8 +32,9 @@ ROOT = Path(__file__).resolve().parents[1]
 SRC_PKG = ROOT / "src" / "claude_folder_handler"
 DIST = ROOT / "dist"
 
-# Read version from the package without importing it (avoids needing the
-# package on the path).
+SKILL_NAME = "claude-folder-handler"
+
+
 def _read_version() -> str:
     init = (SRC_PKG / "__init__.py").read_text(encoding="utf-8")
     for line in init.splitlines():
@@ -40,66 +46,75 @@ def _read_version() -> str:
 SKILL_MD = """---
 name: claude-folder-handler
 description: |
-  Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules, on-demand reference catalog) bundled as a downloadable zip. Detects the user's stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist-friendly defaults (+data-science, +visualization, +llm-app, +llm-extraction, +security-hardening). Returns a zip the user can extract at their repo root. Use when the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", "bootstrap claude for a new project", or asks how to organize a Claude Code configuration. NOT for editing an EXISTING `.claude/` folder — for that the user should install the `claude-folder-handler` MCP server inside Claude Code. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
+  Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules, on-demand reference catalog) and returns it as a downloadable zip the user extracts at their repo root. Detects the user's stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist-friendly pack defaults (+data-science, +visualization, +llm-app, +llm-extraction, +security-hardening). Use this skill whenever the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", "bootstrap claude for a new project", or asks how to organize a Claude Code configuration — even if they don't use the exact word "scaffold". NOT for editing an EXISTING `.claude/` folder; for that the user should install the `claude-folder-handler` MCP server inside Claude Code. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
 ---
 
 # claude-folder-handler
 
-This skill produces a fresh, opinionated `.claude/` directory for the user's
-coding project, as a downloadable zip.
+Produce a fresh, opinionated `.claude/` directory tree for the user's coding
+project, delivered as a downloadable zip they extract at their repo root.
 
-## What you (Claude) do when invoked
+## How this skill works
 
-1. **Locate the bundled package.** The skill ships its scaffold logic at
-   `pkg/claude_folder_handler/` relative to this SKILL.md. Resolve the
-   absolute path to that directory (call it `PKG_PATH`).
+The deterministic work — running stack detection, copying the template,
+installing packs, generating `hooks.lock`, zipping the result — lives in
+`scripts/scaffold.py`. You drive it with a single subprocess call. Don't
+re-implement the logic inline; the script already handles the edge cases
+(dotfile renames, gitignore merging, managed blocks, executable bits).
 
-2. **Gather inputs from the user.** You need three things:
-   - **Stack**: derive from an uploaded `pyproject.toml`, `package.json`,
-     `Cargo.toml`, `go.mod`, or by asking. Pick a project name from the
-     manifest or ask.
-   - **Packs**: present the catalog (`list_packs()`) and propose the
-     LLM-scientist defaults (`+data-science`, `+visualization`, `+llm-app`,
-     `+llm-extraction`, `+security-hardening`). Let the user adjust.
-   - **Output filename**: default `dot-claude-scaffold.zip`.
+## Steps
 
-3. **Run the scaffold in a Python sandbox:**
+1. **List the catalog** so you can show the user the pack menu:
 
-   ```python
-   import sys, os, shutil, tempfile, zipfile
-   from pathlib import Path
-
-   sys.path.insert(0, "<PKG_PATH parent>")  # so `import claude_folder_handler` works
-   from claude_folder_handler.core.scaffold import setup_repo
-   from claude_folder_handler.core.pack_loader import list_packs
-
-   # Build a fake "target repo" with the user's manifest so detect_stack works.
-   target = Path(tempfile.mkdtemp()) / "<project_name>"
-   target.mkdir(parents=True)
-   # If the user uploaded a manifest, copy it in:
-   # (target / "pyproject.toml").write_text(<uploaded content>)
-
-   result = setup_repo(
-       target,
-       packs=[<selected pack names>],  # e.g. ["data-science", "llm-extraction", ...]
-       dry_run=False,
-   )
-   assert result["ok"], result
-
-   # Zip the .claude/ folder + CLAUDE.md + .mcp.json.example + .gitignore.
-   out_zip = Path(tempfile.mkdtemp()) / "<output_filename>"
-   with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED) as z:
-       for p in target.rglob("*"):
-           if p.is_file():
-               z.write(p, arcname=p.relative_to(target))
+   ```bash
+   python scripts/scaffold.py --list-packs
    ```
 
-4. **Present the zip to the user** as a downloadable file along with a
-   short summary:
-   - Stack detected
+   Returns JSON: `{"packs": [{"name", "summary", "default", "depends_on", "description"}, ...]}`.
+
+2. **Gather inputs from the user:**
+
+   - **Project name** — derive from an uploaded manifest (`pyproject.toml`
+     `[project].name`, `package.json` `"name"`, `Cargo.toml` `[package].name`,
+     `go.mod` `module`) or ask. Used for the scaffold's `{{project_name}}`
+     substitution in CLAUDE.md.
+   - **Manifest file (optional)** — if the user uploaded one, pass it via
+     `--manifest-file` so stack detection works. Otherwise the scaffold
+     defaults to a generic Python stack.
+   - **Packs** — show the catalog, propose the default-checked ones (those
+     with `"default": true` — typically `data-science`, `visualization`,
+     `llm-app`, `llm-extraction`, `security-hardening`), let the user adjust.
+   - **Output filename** — default `dot-claude-scaffold.zip`.
+
+3. **Build the scaffold zip:**
+
+   ```bash
+   python scripts/scaffold.py \\
+     --project-name "<name>" \\
+     --manifest-file "<path/to/uploaded-pyproject.toml>" \\
+     --packs "data-science,visualization,llm-app,llm-extraction,security-hardening" \\
+     --out "/tmp/dot-claude-scaffold.zip"
+   ```
+
+   Flags:
+   - `--project-name` (required) — substituted into CLAUDE.md
+   - `--manifest-file PATH` (optional) — copied into the fake target so
+     `detect_stack` picks it up
+   - `--manifest-name NAME` (optional) — overrides the destination filename
+     (default: source file's basename)
+   - `--packs name1,name2,...` (optional) — comma-separated; omit for no
+     packs, pass `--defaults` for the LLM-scientist defaults
+   - `--out PATH` (required) — output zip path
+
+   The script prints a JSON summary on success:
+   `{"ok": true, "out": "...", "files": N, "packs_installed": [...], "stack": {...}}`.
+
+4. **Present the zip** to the user as a downloadable file, plus a short
+   summary:
+   - Stack detected (language, build/test/lint commands)
    - Packs installed
    - File count
-   - How to extract: `cd <repo>; unzip <filename>` (or use the OS unzipper)
+   - How to extract: `cd <repo> && unzip <filename>` (or use the OS unzipper)
    - Suggestion: open the repo in Claude Code and say "audit my .claude folder"
      to verify everything's in place.
 
@@ -124,30 +139,14 @@ A lean baseline plus the chosen packs:
 
 Plus, per selected pack: skills, agents, rules, hooks, reference materials.
 
-## Available packs
-
-Call `list_packs()` from the bundled package to enumerate. The eight shipping
-packs:
-
-- `+pr-flow`              — `open-pr`, `rebase-clean` skills; `reviewer` agent
-- `+test-tooling`         — `debug-failing-test` skill; `test-writer` agent
-- `+data-science` ★       — `inspect-df`, `clean-data`; `data-explorer` agent; pandas rule
-- `+visualization` ★      — `quick-chart`, `chart-review`; plotting rule
-- `+llm-app` ★            — `anthropic-sdk-bootstrap`, `migrate-model-version`; sdk rule
-- `+llm-extraction` ★     — `extract-structured`, `build-extractor-eval`, `batch-extract`; `schema-designer` agent
-- `+monorepo`             — per-package rule for apps/** and packages/**
-- `+security-hardening` ★ — hooks.lock SessionStart verifier; tightened denies
-
-★ = default-checked if the user accepts defaults.
-
 ## Constraints
 
-- Never asks the user to install anything. Everything runs in the sandbox
-  using the bundled package source.
-- Never mutates anything outside the sandbox.
-- The output zip is the deliverable; the user extracts it at their repo root.
-- If the user wants ongoing scaffold/upgrade/audit tooling in Claude Code
-  itself (not just this one-shot), point them at the README's "Persistent
+- Never asks the user to install anything; the bundled `scripts/scaffold.py`
+  has everything it needs.
+- Never mutates anything outside the sandbox — work in `/tmp`, deliver via
+  the output zip.
+- If the user wants ongoing scaffold/upgrade/audit tooling inside Claude
+  Code (not just this one-shot), point them at the repo README's "Persistent
   install" section: <https://github.com/Sdamirsa/claude-folder-handler-SKILL#install>
 
 ## After delivery
@@ -155,47 +154,172 @@ packs:
 Suggest the user:
 1. Unzip at their repo root: `cd <repo> && unzip <filename>`
 2. Inspect `.claude/README.md` for the navigation map
-3. (Optional) install the MCP server for ongoing audit/upgrade: see the project README
+3. (Optional) install the MCP server for ongoing audit/upgrade — see the project README
 """
 
 
-SKILL_README = """# claude-folder-handler — Claude.ai Skill
+SCAFFOLD_PY = '''"""Bundled scaffold runner for the claude-folder-handler Claude.ai skill.
 
-This zip is an uploadable Skill for Claude.ai (web/desktop). After uploading
-via **Settings → Skills → Add skill**, ask Claude:
+This is the deterministic entry point the skill's SKILL.md invokes. It wraps
+the vendored `claude_folder_handler` package so Claude doesn't have to write
+`sys.path.insert` boilerplate at every invocation.
 
-> *"set up .claude for my project"*
+Usage:
+    # Enumerate available packs (for menu display):
+    python scaffold.py --list-packs
 
-The skill will gather your stack + pack preferences, scaffold a fresh
-`.claude/` directory tree (CLAUDE.md, ROUTER.md, settings.json, deterministic
-deny hooks, baseline skills, path-scoped rules, on-demand reference catalog),
-and return a downloadable zip you extract at your repo root.
+    # Build a scaffold zip:
+    python scaffold.py \\
+        --project-name myrepo \\
+        --manifest-file /mnt/user-data/uploads/pyproject.toml \\
+        --packs data-science,visualization,security-hardening \\
+        --out /tmp/dot-claude-scaffold.zip
 
-## Contents
-
-- `SKILL.md` — the skill body (instructions Claude follows)
-- `pkg/claude_folder_handler/` — the scaffold logic and bundled template + 8 packs
-- `README.md` — this file
-
-## For Claude Code users
-
-If you're already on Claude Code, prefer the MCP install — it gives ongoing
-`setup`, `install-pack`, `audit`, and `upgrade` tools, not just one-shot
-scaffolding. See the project README for the one-line install.
-
-## License
-
-MIT. See https://github.com/Sdamirsa/claude-folder-handler-SKILL
+    # Use bundled defaults instead of an explicit pack list:
+    python scaffold.py --project-name myrepo --defaults --out /tmp/x.zip
 """
 
+from __future__ import annotations
 
-# Files / directories to exclude from the bundled pkg (we only ship the
-# functions the skill needs at runtime, not the MCP server / CLI).
+import argparse
+import json
+import sys
+import tempfile
+import zipfile
+from pathlib import Path
+
+
+HERE = Path(__file__).resolve().parent
+# Make the vendored package importable.
+sys.path.insert(0, str(HERE))
+
+
+def _list_packs() -> int:
+    from claude_folder_handler.core.pack_loader import list_packs
+
+    print(json.dumps(list_packs(), indent=2))
+    return 0
+
+
+def _parse_packs(raw: str | None, use_defaults: bool) -> list[str] | None:
+    """Resolve the pack selection.
+
+    Returns None when the user wants the loader's defaults (passed through
+    to setup_repo as `packs=None`); returns an explicit list otherwise
+    (including the empty list for `--packs ""`, which means "no packs").
+    """
+    if use_defaults:
+        return None
+    if raw is None:
+        return []
+    raw = raw.strip()
+    if not raw:
+        return []
+    return [name.strip() for name in raw.split(",") if name.strip()]
+
+
+def _build(args: argparse.Namespace) -> int:
+    from claude_folder_handler.core.scaffold import setup_repo
+
+    out_path = Path(args.out).resolve()
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+
+    with tempfile.TemporaryDirectory() as tmp:
+        target = Path(tmp) / args.project_name
+        target.mkdir(parents=True)
+
+        # Copy uploaded manifest in so detect_stack can read it.
+        if args.manifest_file:
+            mf = Path(args.manifest_file)
+            if not mf.is_file():
+                print(json.dumps({"ok": False, "error": f"manifest-file not found: {mf}"}))
+                return 2
+            dest_name = args.manifest_name or mf.name
+            (target / dest_name).write_bytes(mf.read_bytes())
+
+        packs = _parse_packs(args.packs, args.defaults)
+        result = setup_repo(target, packs=packs, dry_run=False)
+        if not result.get("ok"):
+            print(json.dumps({"ok": False, "error": result.get("error", "scaffold failed"),
+                              "detail": result}))
+            return 1
+
+        # Zip the scaffolded contents at the repo root (no leading project-name
+        # directory inside the zip, so users `unzip` straight into their repo).
+        n_files = 0
+        with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+            for p in sorted(target.rglob("*")):
+                if not p.is_file():
+                    continue
+                z.write(p, arcname=str(p.relative_to(target)))
+                n_files += 1
+
+        summary = {
+            "ok": True,
+            "out": str(out_path),
+            "files": n_files,
+            "packs_installed": result.get("packs_installed", []),
+            "stack": result.get("stack", {}),
+            "size_bytes": out_path.stat().st_size,
+        }
+        print(json.dumps(summary, indent=2))
+        return 0
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(
+        prog="scaffold.py",
+        description="Build a .claude/ scaffold zip (Claude.ai skill entry point).",
+    )
+    parser.add_argument(
+        "--list-packs", action="store_true",
+        help="Print the JSON pack catalog and exit.",
+    )
+    parser.add_argument("--project-name", help="Project name (substituted into CLAUDE.md).")
+    parser.add_argument(
+        "--manifest-file",
+        help="Path to an uploaded pyproject.toml / package.json / Cargo.toml / go.mod.",
+    )
+    parser.add_argument(
+        "--manifest-name",
+        help="Override destination filename for --manifest-file (default: source basename).",
+    )
+    parser.add_argument(
+        "--packs", default=None,
+        help="Comma-separated pack names. Omit for no packs; use --defaults for bundled defaults.",
+    )
+    parser.add_argument(
+        "--defaults", action="store_true",
+        help="Install the LLM-scientist default packs instead of an explicit list.",
+    )
+    parser.add_argument("--out", help="Output zip path.")
+
+    args = parser.parse_args(argv)
+
+    if args.list_packs:
+        return _list_packs()
+
+    if not args.project_name or not args.out:
+        parser.error("--project-name and --out are required (unless using --list-packs).")
+    return _build(args)
+
+
+if __name__ == "__main__":
+    sys.exit(main())
+'''
+
+
+# Files / directories to exclude from the bundled pkg (the skill drives via
+# setup_repo() directly — the MCP server + CLI add the `mcp` dep for nothing).
 EXCLUDE_FROM_PKG = {"mcp_server.py", "cli.py", "__main__.py", "__pycache__"}
 
 
-def _copy_pkg(dest: Path) -> int:
-    """Copy src/claude_folder_handler into dest, skipping CLI + MCP server."""
+def _copy_vendored_pkg(dest_pkg_root: Path) -> int:
+    """Copy src/claude_folder_handler/* into dest_pkg_root/claude_folder_handler/.
+
+    Skips CLI + MCP server + cache dirs so the skill ships without the `mcp`
+    runtime dependency.
+    """
     n = 0
     for src in SRC_PKG.rglob("*"):
         if any(part in EXCLUDE_FROM_PKG for part in src.relative_to(SRC_PKG).parts):
@@ -203,7 +327,7 @@ def _copy_pkg(dest: Path) -> int:
         if src.is_dir():
             continue
         rel = src.relative_to(SRC_PKG)
-        target = dest / "claude_folder_handler" / rel
+        target = dest_pkg_root / "claude_folder_handler" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
         n += 1
@@ -214,28 +338,32 @@ def main() -> int:
     version = _read_version()
     DIST.mkdir(exist_ok=True)
     out = DIST / f"claude-folder-handler-skill-{version}.zip"
-
-    # Build under a temp staging dir, then zip.
-    import tempfile
+    if out.exists():
+        out.unlink()
 
     with tempfile.TemporaryDirectory() as tmp:
-        stage = Path(tmp) / "skill"
+        stage = Path(tmp) / SKILL_NAME
         stage.mkdir()
         (stage / "SKILL.md").write_text(SKILL_MD, encoding="utf-8")
-        (stage / "README.md").write_text(SKILL_README, encoding="utf-8")
-        n = _copy_pkg(stage / "pkg")
+        scripts_dir = stage / "scripts"
+        scripts_dir.mkdir()
+        (scripts_dir / "scaffold.py").write_text(SCAFFOLD_PY, encoding="utf-8")
+        n_pkg = _copy_vendored_pkg(scripts_dir)
 
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
-            for p in stage.rglob("*"):
-                if p.is_file():
-                    arc = p.relative_to(stage)
-                    z.write(p, arcname=str(arc))
+            # stage = <tmp>/claude-folder-handler/; we want the zip rooted at
+            # claude-folder-handler/, so use stage.parent as the arcname base.
+            for p in sorted(stage.rglob("*")):
+                if not p.is_file():
+                    continue
+                z.write(p, arcname=str(p.relative_to(stage.parent)))
 
     size_kb = out.stat().st_size / 1024
     print(f"✓ Wrote {out}")
-    print(f"  Version: {version}")
-    print(f"  Bundled pkg files: {n}")
-    print(f"  Zip size: {size_kb:.1f} KB")
+    print(f"  Skill name:        {SKILL_NAME}")
+    print(f"  Version:           {version}")
+    print(f"  Vendored pkg files:{n_pkg}")
+    print(f"  Zip size:          {size_kb:.1f} KB")
     return 0
 
 
