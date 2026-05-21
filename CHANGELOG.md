@@ -10,6 +10,16 @@ called out in the **Changed** or **Removed** sections.
 
 ## [Unreleased]
 
+## [0.1.2] — 2026-05-21
+
+### Fixed
+- **Claude.ai Skill zip rejected as "Zip must contain exactly one SKILL.md file. Currently there are 14."** The v0.1.1 zip shipped the bundled `data/` tree as loose files, which dragged 13 nested `SKILL.md` files (baseline `commit` skill body + every `+pack`'s scaffolded skill bodies) into the outer namelist. Claude.ai's uploader counts every `SKILL.md` in the archive and rejects on > 1. Fixed by packing `data/` as a single `data.zip` inside the skill bundle; the embedded `scripts/scaffold.py` extracts it once at startup before importing the package.
+
+### Changed
+- **Skill zip layout** verified against the [`anthropics/skills/algorithmic-art` reference](https://github.com/anthropics/skills/tree/main/skills/algorithmic-art): exactly one top-level `SKILL.md`, payload under `scripts/`, no nested `SKILL.md` anywhere else in the outer zip.
+- **`SKILL.md` frontmatter** uses an inline single-line `description:` value instead of a `|` literal block (matches the algorithmic-art / docx style; avoids strict-YAML-validator edge cases).
+- **`build_skill_zip.py`** now asserts the SKILL.md-count invariant at build time and fails loudly if it ever regresses.
+
 ## [0.1.1] — 2026-05-21
 
 ### Changed
@@ -46,6 +56,7 @@ called out in the **Changed** or **Removed** sections.
 - `docs/` covers architecture, MCP setup, packs, triggering convention, security model, upgrade flow, dogfood run, release, and the roadmap grouped by intention.
 - `design/` preserves the full v0 → v4 design history with critiques and interviews.
 
-[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.1...HEAD
+[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.2...HEAD
+[0.1.2]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.1...v0.1.2
 [0.1.1]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases/tag/v0.1.0
