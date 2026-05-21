@@ -12,9 +12,17 @@ Required before the first release. Done once per repo.
 
 GitHub → repo Settings → **Environments** → **New environment** → name `release`.
 
-Under **Deployment protection rules**, enable **Required reviewers** and add
-yourself. This is the manual gate that runs before the GitHub Release is
-created (catches accidental tag pushes).
+Under **Deployment protection rules**, configure as follows:
+
+| Setting | Value | Rationale |
+|---|---|---|
+| Required reviewers | ✅ Add yourself (Sdamirsa) | The manual gate before publish — catches accidental tag pushes |
+| Prevent self-review | ❌ unchecked | Solo dev — you must be able to approve your own releases |
+| Wait timer | ❌ unchecked | The reviewer click is the gate; no extra delay needed |
+| Allow administrators to bypass configured protection rules | ❌ unchecked | Forces every release through the approval flow — no admin escape hatch, clean audit trail |
+
+Note: the "Allow administrators to bypass" checkbox is a "permit" toggle —
+**unchecked means bypass is blocked** (which is what we want).
 
 Under **Deployment branches and tags**, choose **Selected branches and tags**
 and add one rule:
