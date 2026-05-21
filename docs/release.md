@@ -35,6 +35,13 @@ tag refs (`on: push: tags: ["v*"]` or `workflow_dispatch` with a tag input).
 This restriction is a second layer of defense beyond the workflow's own
 tag-shape and version-match verification.
 
+> ⚠️ **Gotcha:** The ref-type dropdown defaults to **Branch**. If you add a
+> `v*` rule but leave the ref type as Branch, the gate evaluates `v*` against
+> branch names and rejects every tag push with:
+> `Tag "vX.Y.Z" is not allowed to deploy to release due to environment
+> protection rules.` Always confirm the rule shows ref type **Tag** after
+> saving. (Hit on the v0.1.0 release; recorded so we don't trip again.)
+
 ### 2. Confirm the workflows are present
 
 - `.github/workflows/ci.yml` — runs on every PR/push to main: tests on

@@ -15,6 +15,7 @@ roughly by where we'd start if we had a free afternoon.
 - **`init` wizard mode** — when called without `--packs`, interactively walk the user through pack selection (multi-select with descriptions) instead of using defaults. Currently the choice is made silently from `default=true` in `pack.toml`; a wizard is friendlier for first-time users.
 - **Windows-native install hardening** — UV and git already work; the remaining gaps are path handling in `bash_parse.py` (assumes `/` separators) and the protected-branches glob behavior. Intention: not block Windows-native dev shops from adopting.
 - **`print-mcp-config --merge`** — read `~/.claude/settings.json`, print the merged result with `claude-folder-handler` added. Users currently hand-merge; one bad-JSON edit is a long debugging trip.
+- **GitHub-release skill (bundled pack)** — a skill that drives the full release flow from inside Claude Code: verify clean tree → run `scripts/bump.py` → push tag → watch the Actions run → prompt the user to approve the `release` environment gate → confirm the GitHub Release page rendered correctly. Codifies the runbook in `docs/release.md` so future releases are a single skill invocation instead of a checklist. Should also encode the gotchas we hit on v0.1.0 (ref type = Tag, admin-bypass = unchecked).
 
 ## Pack ecosystem
 *Intention: let users build their own packs without forking this repo.*

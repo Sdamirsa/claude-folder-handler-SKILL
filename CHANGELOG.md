@@ -10,6 +10,22 @@ called out in the **Changed** or **Removed** sections.
 
 ## [Unreleased]
 
+## [0.1.1] — 2026-05-21
+
+### Changed
+- **Claude.ai Skill zip layout** rebuilt to match Anthropic's skill-creator convention. The zip now roots at `claude-folder-handler/` (top-level folder = skill name), with `SKILL.md` and a `scripts/` directory containing a deterministic `scaffold.py` entry point alongside the vendored package. Previously the zip put `SKILL.md` at the zip root and asked Claude to run `sys.path.insert` + manual `import` boilerplate inline on every invocation — fragile and prone to drift.
+- **`scripts/scaffold.py`** added as the skill's CLI entry point (bundled inside the zip). Supports `--list-packs`, `--project-name`, `--manifest-file`, `--manifest-name`, `--packs`, `--defaults`, `--out`. Returns a JSON summary on success.
+- **`SKILL.md` (inside the zip)** rewritten to delegate all deterministic work to `scripts/scaffold.py` rather than asking Claude to re-derive the logic on each invocation. The "when to use" trigger language in the frontmatter is preserved.
+
+### Removed
+- **`README.md` inside the skill zip** — not part of the official skill convention; the SKILL.md is the only documentation Claude.ai consumes.
+
+### Fixed
+- Bundled package files now live under `scripts/claude_folder_handler/` (skill convention) instead of a custom `pkg/` directory.
+
+### Documentation
+- `docs/release.md` records the v0.1.0 release gotcha (environment tag rule defaults to ref type Branch and silently rejects every tag push).
+
 ## [0.1.0] — 2026-05-21
 
 ### Added
@@ -30,5 +46,6 @@ called out in the **Changed** or **Removed** sections.
 - `docs/` covers architecture, MCP setup, packs, triggering convention, security model, upgrade flow, dogfood run, release, and the roadmap grouped by intention.
 - `design/` preserves the full v0 → v4 design history with critiques and interviews.
 
-[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases/tag/v0.1.0
