@@ -1,17 +1,28 @@
 """Verify the Claude.ai Skill zip builder produces a convention-compliant artifact.
 
-Layout target (Anthropic skill-creator convention):
+Layout target (Anthropic skill-creator convention, see
+https://github.com/anthropics/skills/tree/main/skills/algorithmic-art):
 
     claude-folder-handler/
-    ├── SKILL.md
+    ├── SKILL.md                          # exactly one — Claude.ai rejects > 1
     └── scripts/
         ├── scaffold.py
-        └── claude_folder_handler/...   (vendored package, no MCP/CLI)
+        └── claude_folder_handler/
+            ├── __init__.py
+            ├── core/                     # code-only (no data/)
+            └── data.zip                  # template/ + 8 packs packed as a blob
 
-The end-to-end test extracts the zip, runs `scaffold.py --list-packs` and
-`scaffold.py --project-name ... --out ...`, then verifies the resulting
-scaffold zip contains a real `.claude/` tree — i.e. a Claude.ai user could
-unzip the skill, ask Claude to invoke it, and get a working scaffold.
+Claude.ai's uploader counts every SKILL.md in the outer zip and rejects on
+more than one. The bundled package's `data/` tree contains 13 nested
+SKILL.md files (baseline `commit` skill + 12 pack-skill bodies) which are
+templates for the end-user's `.claude/skills/` directory — NOT skills for
+Claude.ai. We ship `data/` as `data.zip` so the outer namelist only sees one
+SKILL.md.
+
+The end-to-end test extracts the skill zip, runs `scaffold.py --list-packs`
+and a real scaffold build, and verifies the bundled data.zip extracted
+correctly — i.e. a Claude.ai user could drag-drop the .zip and immediately
+get a working scaffold.
 """
 
 from __future__ import annotations
@@ -63,15 +74,28 @@ def test_zip_root_is_skill_named_folder(built_zip: Path):
         )
 
 
-def test_zip_contains_skill_md_at_root(built_zip: Path):
+def test_zip_contains_exactly_one_skill_md(built_zip: Path):
+    """Claude.ai's validator rejects any zip with > 1 SKILL.md.
+
+    This was the v0.1.1 failure mode: bundling `data/` as plain files dragged
+    the 13 nested SKILL.md files (pack-skill bodies, baseline `commit`) into
+    the outer namelist. Fixed in v0.1.2 by packing `data/` as `data.zip`.
+    """
     with zipfile.ZipFile(built_zip) as z:
-        assert f"{SKILL_NAME}/SKILL.md" in z.namelist()
+        skill_mds = [
+            n for n in z.namelist()
+            if n.endswith("/SKILL.md") or n == "SKILL.md"
+        ]
+    assert len(skill_mds) == 1, (
+        f"outer zip must contain exactly 1 SKILL.md, found {len(skill_mds)}: "
+        f"{skill_mds}. The bundled `data/` tree must be packed as data.zip."
+    )
+    assert skill_mds[0] == f"{SKILL_NAME}/SKILL.md"
 
 
 def test_skill_md_has_required_frontmatter(built_zip: Path):
     with zipfile.ZipFile(built_zip) as z:
         body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
-    # Frontmatter delimiters
     assert body.startswith("---\n"), "SKILL.md must start with YAML frontmatter"
     end = body.find("\n---\n", 4)
     assert end > 0, "SKILL.md frontmatter must be closed with '---'"
@@ -80,14 +104,77 @@ def test_skill_md_has_required_frontmatter(built_zip: Path):
     assert "description:" in fm, "frontmatter missing `description` field"
 
 
+def test_skill_md_description_is_single_line(built_zip: Path):
+    """Match algorithmic-art / docx style: single-line description string.
+
+    Literal-block (`description: |`) parses fine in standards-compliant YAML
+    but tripped at least one validator we've seen. Keep it single-line for
+    maximum tooling compatibility.
+    """
+    with zipfile.ZipFile(built_zip) as z:
+        body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
+    # Find the description line in the frontmatter.
+    fm = body.split("\n---\n", 2)[0][4:]  # strip leading "---\n"
+    desc_line = next((ln for ln in fm.splitlines() if ln.startswith("description:")), None)
+    assert desc_line is not None, "no description: line in frontmatter"
+    # The value should be on the same line (not `description: |` followed by indented text).
+    assert not desc_line.rstrip().endswith("|"), (
+        "description should be inline, not a `|` literal block"
+    )
+    value = desc_line.split(":", 1)[1].strip()
+    assert len(value) >= 200, f"description too short: {len(value)} chars"
+
+
 def test_zip_has_scripts_layout(built_zip: Path):
-    """scripts/scaffold.py + bundled package live under scripts/."""
+    """scripts/scaffold.py + bundled package code live under scripts/."""
     with zipfile.ZipFile(built_zip) as z:
         names = z.namelist()
     assert f"{SKILL_NAME}/scripts/scaffold.py" in names
-    # Vendored package present.
-    assert any(n.startswith(f"{SKILL_NAME}/scripts/claude_folder_handler/") for n in names)
     assert f"{SKILL_NAME}/scripts/claude_folder_handler/__init__.py" in names
+    # Code modules present.
+    assert f"{SKILL_NAME}/scripts/claude_folder_handler/core/scaffold.py" in names
+    assert f"{SKILL_NAME}/scripts/claude_folder_handler/core/pack_loader.py" in names
+
+
+def test_zip_bundles_data_as_inner_zip(built_zip: Path):
+    """The data/ tree is packed as data.zip — not as loose files in the outer zip."""
+    with zipfile.ZipFile(built_zip) as z:
+        names = z.namelist()
+    assert f"{SKILL_NAME}/scripts/claude_folder_handler/data.zip" in names
+    # And there must be NO loose data/ files in the outer namelist.
+    loose_data = [n for n in names if "/data/template/" in n or "/data/packs/" in n]
+    assert not loose_data, (
+        f"data/ files leaked into outer zip namelist: {loose_data[:3]}... — "
+        "they must be inside data.zip"
+    )
+
+
+def test_data_zip_contents_complete(built_zip: Path):
+    """The inner data.zip must contain the full template + 8 packs."""
+    with tempfile.TemporaryDirectory() as tmp:
+        tmp_path = Path(tmp)
+        with zipfile.ZipFile(built_zip) as z:
+            z.extract(
+                f"{SKILL_NAME}/scripts/claude_folder_handler/data.zip",
+                tmp_path,
+            )
+        data_zip = tmp_path / SKILL_NAME / "scripts" / "claude_folder_handler" / "data.zip"
+        with zipfile.ZipFile(data_zip) as dz:
+            dnames = dz.namelist()
+
+    template_files = [n for n in dnames if n.startswith("template/")]
+    pack_files = [n for n in dnames if n.startswith("packs/")]
+    assert len(template_files) >= 15, f"template incomplete: {len(template_files)} files"
+    assert len(pack_files) >= 40, f"packs incomplete: {len(pack_files)} files"
+
+    assert "template/claude/ROUTER.md.tmpl" in dnames
+    assert "template/claude/hooks/10-pre-deny-secrets.py" in dnames
+    expected_packs = {
+        "pr-flow", "test-tooling", "data-science", "visualization",
+        "llm-app", "llm-extraction", "monorepo", "security-hardening",
+    }
+    for pack in expected_packs:
+        assert f"packs/{pack}/pack.toml" in dnames, f"missing {pack}/pack.toml"
 
 
 def test_zip_excludes_mcp_and_cli(built_zip: Path):
@@ -99,30 +186,8 @@ def test_zip_excludes_mcp_and_cli(built_zip: Path):
     assert not any(n.endswith("/__main__.py") for n in names), "__main__.py should be excluded"
 
 
-def test_zip_bundles_template_and_packs(built_zip: Path):
-    with zipfile.ZipFile(built_zip) as z:
-        names = z.namelist()
-    template_files = [n for n in names if "/data/template/" in n]
-    pack_files = [n for n in names if "/data/packs/" in n]
-    assert len(template_files) >= 15, f"template incomplete: {len(template_files)} files"
-    assert len(pack_files) >= 40, f"packs incomplete: {len(pack_files)} files"
-
-    assert any("data/template/claude/ROUTER.md.tmpl" in n for n in names)
-    assert any("data/template/claude/hooks/10-pre-deny-secrets.py" in n for n in names)
-    expected_packs = {
-        "pr-flow", "test-tooling", "data-science", "visualization",
-        "llm-app", "llm-extraction", "monorepo", "security-hardening",
-    }
-    for pack in expected_packs:
-        assert any(f"data/packs/{pack}/pack.toml" in n for n in names), f"missing {pack}/pack.toml"
-
-
 def test_zip_skill_md_does_not_inline_python(built_zip: Path):
-    """SKILL.md should delegate to scripts/scaffold.py, not paste Python at runtime.
-
-    Inline `sys.path.insert` snippets are the failure mode we're fixing in
-    v0.1.1 — deterministic work belongs in scripts/, not in prose.
-    """
+    """SKILL.md should delegate to scripts/scaffold.py, not paste Python at runtime."""
     with zipfile.ZipFile(built_zip) as z:
         body = z.read(f"{SKILL_NAME}/SKILL.md").decode("utf-8")
     assert "scripts/scaffold.py" in body, (
@@ -155,9 +220,14 @@ def test_bundled_scaffold_list_packs(built_zip: Path):
         assert "data-science" in names
         assert "security-hardening" in names
 
+        # The first run should have materialized data/ from data.zip on disk.
+        data_dir = tmp_path / SKILL_NAME / "scripts" / "claude_folder_handler" / "data"
+        assert (data_dir / "template").is_dir(), "data.zip was not extracted"
+        assert (data_dir / "packs").is_dir(), "data.zip was not extracted"
+
 
 def test_bundled_scaffold_builds_working_scaffold_zip(built_zip: Path):
-    """End-to-end: extract skill → run scaffold.py → verify the output zip
+    """End-to-end: extract skill → run scaffold.py → verify output zip
     has a real .claude/ tree the user could unzip at a repo root.
     """
     with tempfile.TemporaryDirectory() as tmp:
@@ -166,7 +236,6 @@ def test_bundled_scaffold_builds_working_scaffold_zip(built_zip: Path):
             z.extractall(tmp_path)
         scaffold = tmp_path / SKILL_NAME / "scripts" / "scaffold.py"
 
-        # Stand in for an uploaded pyproject.toml so detect_stack has signal.
         manifest = tmp_path / "uploaded-pyproject.toml"
         manifest.write_text('[project]\nname = "skill-test-target"\n', encoding="utf-8")
 
@@ -191,7 +260,6 @@ def test_bundled_scaffold_builds_working_scaffold_zip(built_zip: Path):
         assert "data-science" in summary["packs_installed"]
         assert "security-hardening" in summary["packs_installed"]
 
-        # Verify the OUTPUT zip is a real .claude/ scaffold a user could unzip.
         with zipfile.ZipFile(out_zip) as out:
             out_names = out.namelist()
         assert "CLAUDE.md" in out_names
@@ -199,10 +267,13 @@ def test_bundled_scaffold_builds_working_scaffold_zip(built_zip: Path):
         assert ".claude/settings.json" in out_names
         assert ".claude/.meta/version" in out_names
         assert ".claude/hooks/10-pre-deny-secrets.py" in out_names
-        # No leading project-name directory inside the output — users unzip at repo root.
-        assert not any(n.startswith("skill-test-target/") for n in out_names), (
-            "output zip should not nest under the project name"
-        )
+        # The OUTPUT zip — which IS scaffolded for the user's project — will
+        # naturally contain pack-skill SKILL.md files. That's correct: those
+        # belong in the user's .claude/skills/ directory. Only the OUTER
+        # skill zip (the one we upload to Claude.ai) has the 1-SKILL.md rule.
+        assert ".claude/skills/commit/SKILL.md" in out_names
+        # No leading project-name directory inside the output.
+        assert not any(n.startswith("skill-test-target/") for n in out_names)
 
 
 def test_bundled_scaffold_handles_no_packs(built_zip: Path):

@@ -3,21 +3,29 @@
 Output: dist/claude-folder-handler-skill-<version>.zip
 
 Layout inside the zip follows Anthropic's official skill convention
-(SKILL.md + scripts/ + references/ + assets/), with the skill folder as the
-zip root so Claude.ai registers it correctly:
+(see https://github.com/anthropics/skills/tree/main/skills/algorithmic-art) —
+exactly **one** SKILL.md at the top of the zip's skill folder, with payload
+files nested under that folder:
 
     claude-folder-handler/
     ├── SKILL.md                          # frontmatter + lean instructions
     └── scripts/
-        ├── scaffold.py                   # CLI that does the deterministic work
-        └── claude_folder_handler/        # vendored package source
+        ├── scaffold.py                   # CLI entry point Claude invokes
+        └── claude_folder_handler/
             ├── __init__.py
-            ├── core/                     # scaffold + audit + pack loader
-            └── data/{template,packs}/    # baseline tree + 8 packs
+            ├── core/                     # scaffold + audit + pack loader code
+            └── data.zip                  # template/ + packs/ packed as a blob
 
-The vendored package excludes the MCP server, CLI, and __main__ — the skill
-drives setup_repo() directly via scripts/scaffold.py, so the `mcp` runtime
-dependency is unneeded in the Claude.ai sandbox.
+The `data/` tree contains 13 nested SKILL.md files (one per bundled pack-skill,
+plus the baseline `commit` skill). Those are **scaffolded skill bodies for the
+end-user's `.claude/skills/` directory** — not skills for Claude.ai's loader.
+Claude.ai's validator counts every SKILL.md in the uploaded zip and rejects on
+> 1, so we ship `data/` as `data.zip` and let `scaffold.py` extract it once
+before importing the package. The validator sees only one SKILL.md (the top-
+level one), and the package's existing `_data_root()` keeps working unchanged.
+
+The vendored package excludes the MCP server, CLI, and `__main__` so the
+skill ships without the `mcp` runtime dependency.
 """
 
 from __future__ import annotations
@@ -30,6 +38,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_PKG = ROOT / "src" / "claude_folder_handler"
+SRC_DATA = SRC_PKG / "data"
 DIST = ROOT / "dist"
 
 SKILL_NAME = "claude-folder-handler"
@@ -43,10 +52,11 @@ def _read_version() -> str:
     raise RuntimeError("Could not determine __version__")
 
 
+# Single-line `description` (matches algorithmic-art / docx style — avoids
+# YAML literal-block parsing edge cases in strict validators).
 SKILL_MD = """---
 name: claude-folder-handler
-description: |
-  Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules, on-demand reference catalog) and returns it as a downloadable zip the user extracts at their repo root. Detects the user's stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist-friendly pack defaults (+data-science, +visualization, +llm-app, +llm-extraction, +security-hardening). Use this skill whenever the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", "bootstrap claude for a new project", or asks how to organize a Claude Code configuration — even if they don't use the exact word "scaffold". NOT for editing an EXISTING `.claude/` folder; for that the user should install the `claude-folder-handler` MCP server inside Claude Code. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
+description: Scaffolds a complete `.claude/` configuration directory for the user's coding project (CLAUDE.md, ROUTER.md, settings.json, deterministic deny hooks, baseline skills, path-scoped rules, on-demand reference catalog) and returns it as a downloadable zip the user extracts at their repo root. Detects the user's stack (Python, Node, Rust, Go) from an uploaded pyproject.toml or package.json and picks LLM-scientist-friendly pack defaults (+data-science, +visualization, +llm-app, +llm-extraction, +security-hardening). Use this skill whenever the user says "set up .claude for my project", "scaffold claude code config", "generate a .claude folder", "I want to start using Claude Code in my repo", "create the .claude structure for me", "bootstrap claude for a new project", or asks how to organize a Claude Code configuration — even if they don't use the exact word "scaffold". NOT for editing an EXISTING `.claude/` folder; for that the user should install the `claude-folder-handler` MCP server inside Claude Code. NOT for installing Claude Code itself; this skill only generates the per-project config tree.
 ---
 
 # claude-folder-handler
@@ -60,7 +70,8 @@ The deterministic work — running stack detection, copying the template,
 installing packs, generating `hooks.lock`, zipping the result — lives in
 `scripts/scaffold.py`. You drive it with a single subprocess call. Don't
 re-implement the logic inline; the script already handles the edge cases
-(dotfile renames, gitignore merging, managed blocks, executable bits).
+(dotfile renames, gitignore merging, managed blocks, executable bits, and
+one-time extraction of the bundled `data.zip` payload).
 
 ## Steps
 
@@ -80,7 +91,7 @@ re-implement the logic inline; the script already handles the edge cases
      substitution in CLAUDE.md.
    - **Manifest file (optional)** — if the user uploaded one, pass it via
      `--manifest-file` so stack detection works. Otherwise the scaffold
-     defaults to a generic Python stack.
+     produces a generic baseline.
    - **Packs** — show the catalog, propose the default-checked ones (those
      with `"default": true` — typically `data-science`, `visualization`,
      `llm-app`, `llm-extraction`, `security-hardening`), let the user adjust.
@@ -164,6 +175,11 @@ This is the deterministic entry point the skill's SKILL.md invokes. It wraps
 the vendored `claude_folder_handler` package so Claude doesn't have to write
 `sys.path.insert` boilerplate at every invocation.
 
+The bundled `data/` tree (template + 8 packs) ships as `data.zip` alongside
+this file so the outer skill zip contains exactly one `SKILL.md` (the one
+Claude.ai validates against). On first run we extract `data.zip` to `data/`
+once, then import the package as normal.
+
 Usage:
     # Enumerate available packs (for menu display):
     python scaffold.py --list-packs
@@ -190,6 +206,33 @@ from pathlib import Path
 
 
 HERE = Path(__file__).resolve().parent
+PKG_ROOT = HERE / "claude_folder_handler"
+PKG_DATA = PKG_ROOT / "data"
+PKG_DATA_ZIP = PKG_ROOT / "data.zip"
+
+
+def _ensure_data_extracted() -> None:
+    """Extract the bundled data.zip on first run.
+
+    The skill zip ships the data tree as a single inner zip to keep the
+    outer zip's SKILL.md count at exactly 1 (Claude.ai's validator counts
+    every SKILL.md and rejects on > 1; the bundled `data/` contains 13
+    pack-skill SKILL.md files that aren't meant for Claude.ai's loader).
+    """
+    # Detect a complete extraction by checking for a known sentinel path.
+    sentinel = PKG_DATA / "template"
+    if sentinel.is_dir():
+        return
+    if not PKG_DATA_ZIP.is_file():
+        # No data.zip available — assume the caller is using an in-place
+        # source checkout where data/ already lives next to the code.
+        return
+    PKG_DATA.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(PKG_DATA_ZIP) as z:
+        z.extractall(PKG_DATA)
+
+
+_ensure_data_extracted()
 # Make the vendored package importable.
 sys.path.insert(0, str(HERE))
 
@@ -309,28 +352,51 @@ if __name__ == "__main__":
 '''
 
 
-# Files / directories to exclude from the bundled pkg (the skill drives via
-# setup_repo() directly — the MCP server + CLI add the `mcp` dep for nothing).
+# Files / directories to exclude when copying the vendored package code.
+# data/ is excluded because we ship it as data.zip (see _build_data_zip).
 EXCLUDE_FROM_PKG = {"mcp_server.py", "cli.py", "__main__.py", "__pycache__"}
 
 
-def _copy_vendored_pkg(dest_pkg_root: Path) -> int:
-    """Copy src/claude_folder_handler/* into dest_pkg_root/claude_folder_handler/.
+def _copy_vendored_code(dest_pkg_root: Path) -> int:
+    """Copy src/claude_folder_handler/* (CODE ONLY — no data/) into dest.
 
     Skips CLI + MCP server + cache dirs so the skill ships without the `mcp`
-    runtime dependency.
+    runtime dependency. Also skips the `data/` tree, which is packed
+    separately as data.zip by _build_data_zip.
     """
     n = 0
     for src in SRC_PKG.rglob("*"):
-        if any(part in EXCLUDE_FROM_PKG for part in src.relative_to(SRC_PKG).parts):
+        rel = src.relative_to(SRC_PKG)
+        if rel.parts and rel.parts[0] == "data":
+            continue
+        if any(part in EXCLUDE_FROM_PKG for part in rel.parts):
             continue
         if src.is_dir():
             continue
-        rel = src.relative_to(SRC_PKG)
         target = dest_pkg_root / "claude_folder_handler" / rel
         target.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(src, target)
         n += 1
+    return n
+
+
+def _build_data_zip(out_path: Path) -> int:
+    """Pack src/claude_folder_handler/data/ into out_path as a single zip.
+
+    Inner zip layout mirrors the on-disk layout (template/, packs/, ...)
+    so the package's existing `_data_root()` works without modification
+    once scaffold.py extracts it.
+    """
+    n = 0
+    out_path.parent.mkdir(parents=True, exist_ok=True)
+    with zipfile.ZipFile(out_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+        for p in sorted(SRC_DATA.rglob("*")):
+            if not p.is_file():
+                continue
+            if p.name == "__pycache__" or "__pycache__" in p.parts:
+                continue
+            z.write(p, arcname=str(p.relative_to(SRC_DATA)))
+            n += 1
     return n
 
 
@@ -348,7 +414,8 @@ def main() -> int:
         scripts_dir = stage / "scripts"
         scripts_dir.mkdir()
         (scripts_dir / "scaffold.py").write_text(SCAFFOLD_PY, encoding="utf-8")
-        n_pkg = _copy_vendored_pkg(scripts_dir)
+        n_code = _copy_vendored_code(scripts_dir)
+        n_data = _build_data_zip(scripts_dir / "claude_folder_handler" / "data.zip")
 
         with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
             # stage = <tmp>/claude-folder-handler/; we want the zip rooted at
@@ -358,12 +425,22 @@ def main() -> int:
                     continue
                 z.write(p, arcname=str(p.relative_to(stage.parent)))
 
+    # Quick post-condition: outer zip must contain exactly one SKILL.md.
+    with zipfile.ZipFile(out) as z:
+        skill_mds = [n for n in z.namelist() if n.endswith("/SKILL.md") or n == "SKILL.md"]
+    if len(skill_mds) != 1:
+        raise SystemExit(
+            f"ERROR: outer skill zip must contain exactly 1 SKILL.md, got {len(skill_mds)}: {skill_mds}"
+        )
+
     size_kb = out.stat().st_size / 1024
     print(f"✓ Wrote {out}")
-    print(f"  Skill name:        {SKILL_NAME}")
-    print(f"  Version:           {version}")
-    print(f"  Vendored pkg files:{n_pkg}")
-    print(f"  Zip size:          {size_kb:.1f} KB")
+    print(f"  Skill name:           {SKILL_NAME}")
+    print(f"  Version:              {version}")
+    print(f"  Vendored code files:  {n_code}")
+    print(f"  data.zip files:       {n_data}")
+    print(f"  SKILL.md count:       {len(skill_mds)} ({skill_mds[0]})")
+    print(f"  Outer zip size:       {size_kb:.1f} KB")
     return 0
 
 
