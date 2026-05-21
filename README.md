@@ -10,9 +10,83 @@ LLM extraction packs ship in the default install.
 
 ## Install
 
+Pick the audience that matches you (expand the one you want):
+
+<details>
+<summary><b>1. For Claude.ai (web / desktop)</b> — drag-and-drop a zip, no terminal, no install</summary>
+
+<br>
+
+If you use Claude in a browser or the macOS/Windows desktop app (not the Claude Code CLI), this is the simplest path. You upload one zip file as a **Skill**, then ask Claude in a chat to scaffold `.claude/` for your project. Claude hands you back another zip you extract at your repo root. **No terminal, no Python, no install commands.**
+
+> **What's a `.claude/` folder, in plain English?** A small directory you put in your code project that tells Claude how to behave there — what conventions to follow, what files to avoid, what skills to invoke for "commit this" or "debug this failing test", what to deny outright (like `rm -rf` or reading `.env`). The scaffold gives you a sensible default tree with security hooks, baseline skills, and routing tuned for LLM work.
+
+**You'll need**
+
+- A Claude.ai account (any plan — free, Pro, or Team)
+- A code project on your computer (any language; a `pyproject.toml` or `package.json` is helpful but not required)
+
+**Step 1 — Download the Skill zip**
+
+Go to the [latest release](https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases/latest) and download `claude-folder-handler-skill-<version>.zip`. **Don't unzip it** — Claude.ai wants the zip as-is.
+
+**Step 2 — Upload it to Claude.ai as a Skill**
+
+1. Open [claude.ai](https://claude.ai) in a browser, or launch the desktop app
+2. Go to **Settings → Capabilities → Skills** *(if you don't see "Skills" right away, check Anthropic's [custom-skills guide](https://support.claude.com/en/articles/12512198-how-to-create-custom-skills) — the location can move)*
+3. Click **Add skill** (or **Upload skill**) and pick the zip you downloaded
+4. You should see `claude-folder-handler` appear in your Skills list
+
+**Step 3 — Use it in a chat**
+
+Start a new conversation and say something like:
+
+> *Set up .claude for my project*
+
+or:
+
+> *I want to start using Claude Code on my repo — can you scaffold the .claude folder for me?*
+
+Tip: drag your `pyproject.toml` or `package.json` into the chat **before** asking, so Claude can detect your stack automatically.
+
+Claude will:
+
+1. Ask which **packs** you want (data-science, visualization, LLM extraction, security hardening, etc.). If you're not sure, say *"use the defaults"*.
+2. Ask for a **project name** (or read it from the manifest you uploaded)
+3. Produce a downloadable zip named `dot-claude-scaffold.zip` (or whatever name you asked for)
+
+**Step 4 — Drop the result into your repo**
+
+1. Download the `dot-claude-scaffold.zip` Claude gave you
+2. Move it into your project folder
+3. Extract it:
+   - macOS / Linux: `unzip dot-claude-scaffold.zip`
+   - Windows: right-click → **Extract All**
+4. You'll now have a `.claude/` directory plus a `CLAUDE.md` file at your repo root
+
+**Step 5 — Start using the scaffold**
+
+The `.claude/` folder only *does* something when Claude reads it — which happens in Claude Code. If you don't have Claude Code yet, install it from the [official getting-started guide](https://docs.claude.com/en/docs/claude-code/getting-started) (a few seconds), open your repo, and you're done — Claude Code picks up the scaffold automatically.
+
+**FAQ**
+
+- *"Claude asks which packs but I don't recognize the names."* Say *"use the defaults"*. You'll get data-science, visualization, llm-app, llm-extraction, and security-hardening — a solid starting set.
+- *"How do I upgrade later?"* Download the latest zip from the [Releases page](https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases), re-upload as a Skill (it replaces the previous version), then re-run the skill in a new chat to regenerate the scaffold.
+- *"What's the difference between this and the MCP install (option 2 below)?"* This is **one-shot** scaffolding via drag-and-drop. The MCP install gives you **ongoing** tools — `audit`, `upgrade`, `install-pack` — that Claude Code can call as actual MCP tool calls throughout the life of your project. If you don't use Claude Code, the Skill is all you need.
+- *"I changed my mind and want the more powerful technical install."* No problem — see option 2 below. The Skill and the MCP install don't conflict; you can have both.
+
+</details>
+
+<details open>
+<summary><b>2. For Claude Code (MCP)</b> — terminal install; full ongoing toolkit (audit, upgrade, install-pack, CI, parallel sub-agent flows)</summary>
+
+<br>
+
+For technical users running [Claude Code](https://docs.claude.com/en/docs/claude-code) in a terminal. Installs an MCP server (and optional CLI) so Claude can call `setup_claude_folder`, `install_pack`, `audit_claude_folder`, `upgrade_claude_folder`, `approve_hooks`, and `list_packs` as real MCP tools — **over the lifetime of your project**, not just at scaffold time. Also unlocks Claude Code's richer execution environment: parallel sub-agents, background bash commands, hook integration, file-system tools.
+
 Prerequisite: [`uv`](https://docs.astral.sh/uv/getting-started/installation/). One-liner: `curl -LsSf https://astral.sh/uv/install.sh | sh`.
 
-Pick the path that matches what you're trying to do (expand the one you want):
+Pick the install variant that matches what you're trying to do (expand the one you want):
 
 <details>
 <summary><b>A. Have Claude do it for you</b> — one line you copy and send to Claude</summary>
@@ -132,7 +206,7 @@ Use the CLI in a workflow step — no Claude session required:
 git clone https://github.com/Sdamirsa/claude-folder-handler-SKILL
 cd claude-folder-handler-SKILL
 uv venv && uv pip install -e ".[dev]"
-uv run pytest                                  # 103 tests
+uv run pytest                                  # 121 tests
 uv build                                       # wheel + sdist under dist/
 uv run python scripts/build_skill_zip.py       # Claude.ai Skill zip under dist/
 ```
@@ -141,24 +215,9 @@ See [`docs/release.md`](docs/release.md) for cutting a release.
 
 </details>
 
-<details>
-<summary><b>G. Claude.ai web/desktop (no Claude Code)</b> — Skill upload</summary>
-
-<br>
-
-If you're using Claude.ai in a browser or desktop app rather than Claude Code, install the **Skill zip** instead:
-
-1. Download `claude-folder-handler-skill-<version>.zip` from the [Releases page](https://github.com/Sdamirsa/claude-folder-handler-SKILL/releases) (or build it locally — see option F).
-2. In Claude.ai → **Settings → Skills → Add skill**, upload the zip.
-3. In any conversation, say *"set up .claude for my project"*.
-
-The skill runs in Claude.ai's sandbox, asks about your stack and pack preferences (or reads an uploaded `pyproject.toml` / `package.json`), scaffolds a `.claude/` directory tree, and returns a zip you extract at your repo root.
-
-For ongoing audit/upgrade tooling, use the MCP install instead (paths A or B above).
+> ⚠ **MCP server doesn't show up after install?** See [`docs/mcp-setup.md`](docs/mcp-setup.md) for troubleshooting (uvx PATH, JSON validity, `uvx --refresh` to bust stale caches).
 
 </details>
-
-> ⚠ **MCP server doesn't show up after install?** See [`docs/mcp-setup.md`](docs/mcp-setup.md) for troubleshooting (uvx PATH, JSON validity, `uvx --refresh` to bust stale caches).
 
 ---
 
